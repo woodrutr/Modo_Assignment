@@ -1,0 +1,204 @@
+AI Assistant Workflow Notes
+===========================
+
+Purpose
+-------
+This file records how the project-specific personalization and architecture rules
+improved execution quality, prevented errors, and kept the repository aligned to a
+single source of truth.
+
+How To Use This File
+--------------------
+Treat this file as a compact verification ledger for the repo:
+- `Timestamped Notes` explains why key architectural and scope decisions were made.
+- `Verified State` lists what has been double-checked successfully.
+- `Open / Pending` lists what still should not be assumed complete.
+
+Timestamped Notes
+-----------------
+[2026-03-06 17:19:20 EST | backfill snapshot] Earlier implementation notes were
+captured after the fact at this time because explicit live timestamp logging had not
+yet been requested. Summary of that completed work:
+- Single-truth-first implementation started at `src/config.py`, which prevented path,
+  threshold, and artifact drift across modules.
+- Grid-integrity rules changed validation from permissive logging to hard failure on
+  missing or duplicate hourly intervals.
+- `pathlib` from the project root replaced hardcoded relative paths.
+- Separation of concerns kept ingestion, analytics, and presentation in distinct
+  modules and prevented business logic from leaking into Streamlit.
+- Scope discipline blocked a pivot into a fragile live JSON system and kept Parquet
+  as the canonical artifact layer.
+- Determinism requirements fixed the year strategy at 2025 with fallback to 2024.
+- Battery heuristic inconsistencies in the draft architecture were corrected before
+  they could become demo-time confusion.
+- `pydantic` was removed once local verification showed it added dependency friction
+  without enough value for this take-home.
+
+[2026-03-06 17:24:16 EST | observed runtime] First end-to-end fetch attempt reached
+the live ERCOT code path inside the virtual environment and failed only at the
+sandbox DNS boundary. That confirmed the fetch module and `gridstatus` API surface
+were wired correctly before requesting broader network access.
+
+[2026-03-06 17:24:31 EST | observed runtime] The network-enabled fetch completed
+successfully for analysis year 2025, wrote raw and processed Parquet artifacts, and
+produced a clean validation report with 131,400 rows, 15 locations, zero duplicates,
+and zero missing hourly intervals.
+
+[2026-03-06 17:25:21 EST | live status] The repo now has a project-local `.venv`,
+all pinned dependencies installed, unit tests passing in that environment, and
+metric artifacts built successfully from real ERCOT data. Remaining validation work
+is focused on the Streamlit runtime path under sandboxed port-binding constraints.
+
+[2026-03-06 17:27:14 EST | live status] The documentation was updated to reflect the
+actual working environment rather than the original draft assumption: the repo is
+verified locally on Python 3.13 with `gridstatus==0.29.1`, not the earlier
+`0.34.0` planning pin.
+
+[2026-03-06 17:27:14 EST | live status] The Streamlit server started successfully on
+`127.0.0.1:8501` against the generated artifacts and shut down cleanly, which means
+the app path is validated beyond static imports and unit tests.
+
+[2026-03-06 17:27:14 EST | design decision] A macOS `.command` launcher was added so
+the take-home can be run by double-clicking from Finder. This is intentionally a
+thin bootstrap layer over the existing source-of-truth pipeline rather than a second
+execution path.
+
+[2026-03-06 17:32:59 EST | verified runtime] The launcher bootstrap path was tested
+without GUI side effects via `OPEN_BROWSER=0 CHECK_ONLY=1 ./Run_ERCOT_Screener.command`.
+It resolved the repo root correctly, rebuilt metric artifacts successfully, and
+exited cleanly.
+
+[2026-03-06 17:40:51 EST | feature addition] An interactive Texas map layer was
+added to the app using representative lat/lon anchors for each ERCOT hub, load
+zone, and statewide average. The map is now another presentation view over the same
+metric artifacts rather than a second analytics path.
+
+[2026-03-06 17:40:51 EST | verified runtime] The expanded test suite now includes
+map-anchor completeness and selection-event parsing. The updated app started
+successfully on `127.0.0.1:8502` after the map integration and shut down cleanly.
+
+[2026-03-06 17:43:24 EST | design decision] A Windows launcher pair was added as the
+highest-confidence cross-platform option available in this environment: a
+double-clickable `.bat` wrapper that delegates to a PowerShell bootstrap script.
+The Windows bootstrap uses `.venv-win` so it will not collide with the verified
+macOS `.venv` in the same repo.
+
+[2026-03-06 17:43:24 EST | reviewed design] The Windows launcher files were reviewed
+for command quoting, Python launcher fallback order, virtual-environment pathing,
+and double-click behavior expectations. They remain high-confidence but unverified
+until run on an actual Windows machine.
+
+[2026-03-06 17:46:59 EST | feature addition] The screen table was split into a
+human-readable reviewer view and a raw metrics view. The reviewer view narrows the
+table, renames columns for humans, adds a short qualitative readout, and preserves a
+separate raw export for technical inspection.
+
+[2026-03-06 17:46:59 EST | verified runtime] The reviewer-table helpers are covered
+by unit tests, the bootstrap runner still completes cleanly, and the updated app
+started successfully on `127.0.0.1:8503` after the table redesign.
+
+[2026-03-06 17:47:30 EST | user-confirmed review] The macOS `.command` launcher has
+been used successfully via double-click, so Finder-launch behavior is no longer an
+open issue.
+
+[2026-03-06 17:47:30 EST | user-confirmed review] Manual dashboard review has begun,
+so the app is no longer in a purely code-verified state from a user-experience
+standpoint.
+
+[2026-03-06 17:55:18 EST | design pass] The dashboard layout was reworked around a
+quieter visual system and a clearer decision flow: hero and summary first, then
+map-plus-focus inspection, then the reviewer table, then evidence charts, with raw
+diagnostics moved to the bottom. The goal was to reduce visual assault and make the
+screen feel product-grade rather than widget-stacked.
+
+[2026-03-06 17:55:18 EST | verified runtime] After the full UI redesign, the unit
+suite still passed, the bootstrap runner still completed cleanly, and the redesigned
+app started successfully on `127.0.0.1:8504` and shut down cleanly.
+
+Verified State
+--------------
+As of 2026-03-06 17:55:18 EST, the following items have been double-checked:
+
+1. Dependency isolation
+   - A project-local virtual environment exists at `.venv`.
+   - The pinned requirements install successfully into that environment.
+
+2. Test suite
+   - Command verified: `.venv/bin/python -m unittest discover -s tests`
+   - Result: 15 tests passed, including map-anchor, reviewer-table, and selection-parser coverage.
+
+3. Live data ingestion
+   - Command verified: `.venv/bin/python -m src.data.fetch`
+   - Result: 2025 ERCOT DAM data fetched successfully.
+   - Validation outcome: 131,400 rows, 15 locations, 8,760 expected hourly intervals
+     per location, zero missing intervals, zero duplicate intervals.
+
+4. Metric build
+   - Command verified: `.venv/bin/python -m src.analytics.metrics`
+   - Result: screener metrics, daily spread panel, and battery summary artifacts were
+     written successfully.
+
+5. App startup
+   - Command verified: `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8504`
+   - Result: the redesigned server started successfully and shut down cleanly.
+
+6. Interactive Texas map
+   - Representative anchor coordinates exist for all 15 ERCOT hubs/load zones used
+     by the screener.
+   - The map selection parser is covered by unit tests.
+   - The docs explicitly state that the map uses representative anchors rather than
+     official ERCOT centroids.
+
+7. Double-click runner design
+   - `Run_ERCOT_Screener.command` bootstraps `.venv`, installs dependencies if
+     needed, fetches data when artifacts are missing, rebuilds metrics, and launches
+     the app.
+   - Command verified: `OPEN_BROWSER=0 CHECK_ONLY=1 ./Run_ERCOT_Screener.command`
+   - Result: bootstrap completed cleanly in non-GUI check mode.
+   - User-confirmed: Finder double-click launch has now been used successfully.
+
+8. Windows launcher design
+   - `Run_ERCOT_Screener.bat` delegates to `Run_ERCOT_Screener.ps1`.
+   - `Run_ERCOT_Screener.ps1` bootstraps `.venv-win`, installs dependencies if
+     needed, fetches data when artifacts are missing, rebuilds metrics, and launches
+     the app.
+   - This launcher path has been designed and reviewed for Windows Explorer
+     double-click use, but it has not been runtime-verified in the current macOS-only
+     environment.
+
+9. Documentation alignment
+   - README and architecture docs now match the working environment and generated
+     outputs rather than the original draft assumptions, including the map layer.
+
+10. Reviewer-friendly table layer
+   - The screen now includes a narrow reviewer view and a separate raw metrics view.
+   - Both views support CSV download directly from the app.
+   - The selected-location panel now includes a human-readable narrative summary,
+     with raw JSON moved behind an expander.
+
+11. Manual user review status
+   - Manual dashboard review has begun, so the UI is now both startup-verified and
+     user-reviewed at a basic level.
+
+12. Layout redesign
+   - The page now follows a stronger visual hierarchy: decision summary first,
+     geography second, comparison third, evidence fourth, diagnostics last.
+   - The default reading path is human-first; raw JSON and raw tables no longer
+     dominate the primary screen.
+
+Open / Pending
+--------------
+As of 2026-03-06 17:55:18 EST, these items should not be assumed complete:
+
+1. No deployment target has been configured. The app is locally runnable, but there
+   is no hosted environment or cloud deployment path in this repo yet.
+
+2. The Windows launcher has not been runtime-verified because no Windows shell is
+   available in the current environment. It should be treated as high-confidence but
+   unverified until run on an actual Windows machine.
+
+3. No Git remote, push workflow, or PR workflow has been executed for this codebase
+   yet from within this log.
+
+4. The verified runtime environment is Python 3.13 with the pinned local `.venv`.
+   Cross-version compatibility outside that verified path has not been re-tested.

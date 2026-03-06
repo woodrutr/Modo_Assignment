@@ -21,7 +21,7 @@
 | Historical DAM Load Zone and Hub Prices | NP4-180-ER | Day-ahead SPPs for hubs + load zones | Hourly | Excel via ZIP |
 | Historical RTM Load Zone and Hub Prices | NP6-785-ER | Real-time SPPs for hubs + load zones | 15-minute | Excel via ZIP |
 
-**Access Method:** The `gridstatus` Python library (v0.34.0) provides `Ercot.get_dam_spp(year)` and `Ercot.get_rtm_spp(year)` methods that download these archives directly from ERCOT's public document server. No API key or market participant credentials are required.
+**Access Method:** The `gridstatus` Python library (v0.29.1 in this repo) provides `Ercot.get_dam_spp(year)` and `Ercot.get_rtm_spp(year)` methods that download these archives directly from ERCOT's public document server. No API key or market participant credentials are required.
 
 **Coverage Period:** 12 months. Calendar year 2025 (January 1 – December 31). If 2025 archive is not yet available at run time, the pipeline falls back to 2024.
 
@@ -62,6 +62,16 @@ RTM data is included as a secondary validation layer but is not required for the
 
 These ~15 locations are the complete set of hubs and load zones returned by `get_dam_spp()`. No individual resource nodes are included (that would require different data products and add complexity without proportional analytical value for a screener).
 
+### Spatial Anchor Layer for the UI
+
+The Streamlit UI includes an interactive Texas map. Because ERCOT hubs and load zones are regions or averages rather than single physical nodes, the map uses **representative anchor coordinates** for each location rather than official ERCOT centroids. These anchors are chosen to match the official [ERCOT maps](https://www.ercot.com/news/mediakit/maps) topology and a recognizable metro or service-area center.
+
+This means:
+
+- The map is appropriate for navigation and qualitative spatial context.
+- The map is **not** a nodal siting tool and should not be interpreted as the exact geographic location of a settlement point.
+- `HB_BUSAVG` and `HB_HUBAVG` are placed at central Texas anchor points because they represent system-wide averages, not local assets.
+
 ---
 
 ## Output Schema from gridstatus
@@ -95,7 +105,7 @@ ERCOT operates on Central Prevailing Time (CPT). DST creates:
 
 ERCOT archives occasionally contain missing rows for specific hours/intervals.
 
-**Mitigation:** After ingestion, validate expected row counts per location per day (24 for DAM, 96 for RTM). Log missing intervals. Metrics are computed on available data with explicit `NaN` handling — no forward-filling or interpolation.
+**Mitigation:** After ingestion, validate a complete hourly UTC interval grid per location. Missing or duplicate intervals trigger a hard error. No forward-filling, interpolation, or blank-filling is permitted.
 
 ### 3. Year Boundary for Archives
 
@@ -105,9 +115,9 @@ ERCOT archives occasionally contain missing rows for specific hours/intervals.
 
 ### 4. Python Version Constraint
 
-`gridstatus` v0.34.0 requires Python ≥3.11 (uses `StrEnum` from the standard library, introduced in 3.11).
+The implementation in this repo is verified locally with Python 3.13 and `gridstatus` v0.29.1.
 
-**Mitigation:** `requirements.txt` and `README.md` specify Python ≥3.11 explicitly. The setup instructions include version verification.
+**Mitigation:** `requirements.txt` pins the working `gridstatus` version, and `README.md` documents the exact Python environment verified locally. The setup instructions include version verification.
 
 ### 5. Network Dependency
 
@@ -157,11 +167,10 @@ Where `norm()` is min-max normalization across all locations and `w1–w4` are c
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
 | Load profile | Flat 100 MW, 24/7 | Stylized data-center-like baseload |
-| Battery capacity | 100 MWh (1-hour duration at load rating) | Representative grid-scale Li-ion |
-| Battery power | 100 MW charge / 100 MW discharge | Symmetric |
-| Round-trip efficiency | 85% | Conservative Li-ion assumption |
+| Charge throughput | 100 MWh per charge hour | Simplifies the battery heuristic to an hourly energy block |
 | Charge window | 4 lowest-price hours per day | Heuristic, not optimized |
 | Discharge window | 4 highest-price hours per day | Heuristic, not optimized |
+| Round-trip efficiency | 85% | Conservative Li-ion assumption |
 | Cycle constraint | 1 full cycle per day | Simplification |
 
 ### Logic (Heuristic, Not Optimization)
@@ -169,8 +178,8 @@ Where `norm()` is min-max normalization across all locations and `w1–w4` are c
 For each day at each location:
 
 1. Sort 24 hourly prices ascending
-2. Charge hours = bottom 4 hours. Charging cost = `sum(price[0:4]) * 100 MWh / 0.85`
-3. Discharge hours = top 4 hours. Avoided cost = `sum(price[-4:]) * 100 MWh`
+2. Charge hours = bottom 4 hours. Charging cost = `sum(price[0:4]) * 100 MWh`
+3. Discharge hours = top 4 hours. Avoided cost = `sum(price[-4:]) * 100 MWh * 0.85`
 4. Net benefit per day = `avoided_cost - charging_cost`
 5. Annual avoided cost = `sum(daily_net_benefit)`
 
@@ -216,6 +225,7 @@ This is intentionally transparent and not a production-grade dispatch optimizer.
 │                 Presentation Layer                      │
 │                                                         │
 │  Streamlit app (app.py)                                 │
+│  - Interactive Texas map with click-through selection   │
 │  - Screener table with sortable columns                 │
 │  - Price distribution charts per location               │
 │  - Daily spread heatmap                                 │
@@ -231,6 +241,7 @@ This is intentionally transparent and not a production-grade dispatch optimizer.
 - **`src/analytics/metrics.py`** — All metric computations. Pure functions: DataFrame in, DataFrame out. No I/O.
 - **`src/analytics/battery_model.py`** — Toy battery heuristic. Pure functions. No I/O.
 - **`src/config.py`** — All constants: file paths (via pathlib), metric parameters, model assumptions. Single source of truth.
+- **`src/presentation/texas_map.py`** — Representative Texas anchor metadata join, clickable map figure construction, and selection parsing. No business logic.
 - **`app.py`** — Streamlit presentation only. Reads from `data/metrics/`, renders UI. No computation.
 
 ---
@@ -239,13 +250,13 @@ This is intentionally transparent and not a production-grade dispatch optimizer.
 
 | Component | Choice | Version Constraint |
 |-----------|--------|--------------------|
-| Language | Python | ≥ 3.11 |
-| Data acquisition | gridstatus | 0.34.0 |
+| Language | Python | 3.13 verified locally |
+| Data acquisition | gridstatus | 0.29.1 |
 | Data manipulation | pandas | ≥ 2.0 |
 | Serialization | pyarrow | (for Parquet I/O) |
 | Visualization | plotly | (interactive charts in Streamlit) |
 | Presentation | streamlit | ≥ 1.30 |
-| Configuration | pydantic | (typed settings validation) |
+| Configuration | stdlib `dataclasses` | (typed settings validation with minimal dependency surface) |
 
 ---
 
@@ -256,7 +267,7 @@ This is intentionally transparent and not a production-grade dispatch optimizer.
 - A screening tool that ranks ERCOT locations by battery-friendly price patterns
 - Built on publicly available, reproducible data
 - Transparent in its assumptions and methodology
-- Designed to run on any machine with Python ≥3.11 and internet access
+- Designed to run on any machine with a modern Python 3 environment and internet access, with Python 3.13 verified locally for this repo
 
 **Is not:**
 
