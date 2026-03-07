@@ -1,0 +1,30 @@
+How To Use This File
+- Timestamped Notes is append-only within and across sessions.
+- Verified State records only commands that were actually run successfully.
+- Open / Pending lists anything not yet verified so downstream readers do not assume completion.
+
+Timestamped Notes
+- 2026-03-06T18:14:00-05:00 [architecture] Operating in isolated development mode. Single truth path remains raw ERCOT data -> validated processed parquet -> metrics artifacts, with the Streamlit app and Texas map limited to presentation concerns.
+- 2026-03-06T18:14:00-05:00 [bug] User-reported Plotly runtime failure traced to `Scattergeo.selected.marker.line`, which is not a valid Plotly property on selected markers.
+- 2026-03-06T18:14:00-05:00 [recovery] Repository source files for the working app were missing; only compiled `.pyc` artifacts remained. Preserved surviving compiled artifacts in `compiled_backup/` and restored source shims plus a source implementation of `src/presentation/texas_map.py`.
+- 2026-03-06T18:14:00-05:00 [decision] Reimplemented `src/config.py` from the documented contract and on-disk artifact names to avoid further dependence on overwritten compiled config bytecode.
+- 2026-03-06T18:12:25-05:00 [correction] The four seed entries above were written before the wall-clock timestamp was captured and should be treated as approximate ordering markers, not authoritative verification times.
+- 2026-03-06T18:12:25-05:00 [fix] Replaced the invalid Plotly selection styling in `src/presentation/texas_map.py` so selected map markers use valid `color`, `size`, and `opacity` fields instead of the unsupported `selected.marker.line`.
+- 2026-03-06T18:12:25-05:00 [verification] Restored source-backed execution for the app, fetch pipeline, and metrics pipeline using `compiled_backup/` as the immutable source for surviving compiled modules. Verified unit tests, cached data fetch, metrics rebuild, and headless Streamlit startup.
+
+Verified State
+- Pending verification after source restoration and Plotly map fix.
+- 2026-03-06T18:12:25-05:00 verified commands:
+- `.venv/bin/python -m unittest discover -s tests`
+- `.venv/bin/python -m src.data.fetch`
+- `.venv/bin/python -m src.analytics.metrics --year 2025`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8506`
+- Result: targeted map regression tests passed, cached fetch and metric rebuild completed successfully, and the Streamlit app booted without the Plotly `selected.marker.line` error.
+
+Open / Pending
+- Verify `python -m unittest discover -s tests` passes with the new map regression test.
+- Verify `streamlit run app.py` starts cleanly after the `Scattergeo` selection fix.
+- Confirm restored source shims are sufficient for fetch/metrics commands, not only app startup.
+- Resolved as of 2026-03-06T18:12:25-05:00: the three verification items above are now satisfied.
+- Remaining uncertainty: source parity with the lost precompiled `.py` files is not independently provable because this recovery relied on surviving `.pyc` artifacts plus a fresh source implementation of `src/config.py` and `src/presentation/texas_map.py`.
+- Remaining uncertainty: manual browser click-through of the map after this specific fix has not been rechecked in a human-driven session.
