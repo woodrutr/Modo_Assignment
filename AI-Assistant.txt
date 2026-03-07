@@ -109,6 +109,8 @@ Timestamped Notes
 - 2026-03-07T16:11:22-05:00 [verification] Verified the hero-title and spacing fix with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8525`. Both passed.
 - 2026-03-07T16:12:07-05:00 [fix] The ranking table still had one blank bottom row because the viewport height formula in `app.py` was still allocating `len(formatted) + 1` row slots. Removed the extra-row allowance so the grid height now scales to the actual number of rendered data rows.
 - 2026-03-07T16:12:07-05:00 [verification] Verified the revised ranking-table height with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8526`. Both passed.
+- 2026-03-07T16:33:29-05:00 [fix] The map-selection bug was not only in Plotly click handling; the right-side focus dropdown could also overwrite a fresh map click on rerun because its widget state persisted the prior location. Updated `_render_focus_selector` in `app.py` so the selectbox key is synchronized to the canonical `selected_location` before rendering, making map clicks and dropdown changes behave as equivalent selection inputs.
+- 2026-03-07T16:33:29-05:00 [verification] Verified the selector-state sync fix with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8527`. Both passed.
 
 Verified State
 - 2026-03-07T16:00:49-05:00 verified commands:
@@ -135,6 +137,10 @@ Verified State
 - `.venv/bin/python -m py_compile app.py`
 - `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8526`
 - Result: the dashboard compiled cleanly and booted headlessly with the ranking table height sized to the actual rendered row count rather than an extra placeholder row.
+- 2026-03-07T16:33:29-05:00 verified commands:
+- `.venv/bin/python -m py_compile app.py`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8527`
+- Result: the dashboard compiled cleanly and booted headlessly with the map/detail selection flow no longer vulnerable to stale focus-selectbox state on rerun.
 
 Open / Pending
 - Manual browser confirmation of the ranking table’s final visual treatment remains pending. Headless startup is verified; a human check of the exact zebra contrast and the removal of blank bottom rows has not yet been re-recorded in this ledger.

@@ -451,11 +451,19 @@ def _render_focus_selector(
     location_order = active_frame["location"].tolist()
     location_type_lookup = active_frame.set_index("location")["location_type"].to_dict()
     rank_lookup = active_frame.set_index("location")[rank_column].astype(int).to_dict()
+    current_location = st.session_state["selected_location"]
+    if current_location not in location_order:
+        current_location = location_order[0]
+        st.session_state["selected_location"] = current_location
+
+    # Keep the widget state aligned with canonical selection so map clicks do not
+    # get overwritten by a stale selectbox value on the next rerun.
+    if st.session_state.get(widget_key) != current_location:
+        st.session_state[widget_key] = current_location
 
     selected_location = st.selectbox(
         label,
         options=location_order,
-        index=location_order.index(st.session_state["selected_location"]),
         format_func=lambda location: (
             f"#{rank_lookup[location]} · {location} · {location_type_lookup[location]}"
         ),
