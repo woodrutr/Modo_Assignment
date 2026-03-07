@@ -508,7 +508,6 @@ def _render_map_section(profile_key: str, duration_hours: int) -> None:
         st.session_state["selected_location"] = clicked_location
         st.rerun()
 
-    selected = _selected_row(st.session_state["selected_location"])
     with detail_col:
         _render_focus_selector(
             _active_metrics_frame(profile_key, duration_hours),
@@ -516,6 +515,7 @@ def _render_map_section(profile_key: str, duration_hours: int) -> None:
             "Focus location (active-lens rank)",
             f"focus_location_map_{rank_column}",
         )
+        selected = _selected_row(st.session_state["selected_location"])
         st.markdown(f"#### {selected['location']}")
         st.markdown(build_location_narrative(selected, profile_key, duration_hours))
         card_left, card_right = st.columns(2)
@@ -974,7 +974,6 @@ def _render_flexibility_tab(selected: pd.Series, profile_key: str, duration_hour
 def _render_analyst_console(profile_key: str, duration_hours: int) -> None:
     active_frame = _active_metrics_frame(profile_key, duration_hours)
     rank_column = _lens_column(profile_key, duration_hours, "rank")
-    selected = _selected_row(st.session_state["selected_location"])
     st.markdown("### Analyst Console")
     _render_focus_selector(
         active_frame,
@@ -982,6 +981,7 @@ def _render_analyst_console(profile_key: str, duration_hours: int) -> None:
         "Analyst focus (active-lens rank)",
         f"focus_location_console_{rank_column}",
     )
+    selected = _selected_row(st.session_state["selected_location"])
     tab_summary, tab_shape, tab_4h, tab_8h = st.tabs(
         ["Annual Summary", "Temporal Shape", "4h Flexibility", "8h Flexibility"]
     )

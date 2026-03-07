@@ -4,24 +4,21 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
 function Get-PythonLauncher {
-    $candidates = @(
-        @{ Command = "py"; Args = @("-3.13") },
-        @{ Command = "py"; Args = @("-3.12") },
-        @{ Command = "py"; Args = @("-3.11") },
-        @{ Command = "py"; Args = @("-3.10") },
-        @{ Command = "py"; Args = @("-3") },
-        @{ Command = "py"; Args = @() },
-        @{ Command = "python"; Args = @() },
-        @{ Command = "python3"; Args = @() }
-    )
-
-    foreach ($candidate in $candidates) {
-        if (Get-Command $candidate.Command -ErrorAction SilentlyContinue) {
-            return $candidate
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        & py -3.12 -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return @{ Command = "py"; Args = @("-3.12") }
         }
     }
 
-    throw "No supported Python launcher found."
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        & python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return @{ Command = "python"; Args = @() }
+        }
+    }
+
+    throw "This launcher requires Python 3.12.x. Install Python 3.12 and recreate .venv-win before running the app."
 }
 
 $venvDir = Join-Path $scriptDir ".venv-win"
@@ -29,7 +26,13 @@ $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $venvPip = Join-Path $venvDir "Scripts\pip.exe"
 $venvStreamlit = Join-Path $venvDir "Scripts\streamlit.exe"
 
-if (-not (Test-Path $venvPython)) {
+if (Test-Path $venvPython) {
+    & $venvPython -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "This launcher requires Python 3.12.x. Recreate .venv-win with Python 3.12 before running the app."
+    }
+}
+else {
     $launcher = Get-PythonLauncher
     & $launcher.Command @($launcher.Args + @("-m", "venv", $venvDir))
 }

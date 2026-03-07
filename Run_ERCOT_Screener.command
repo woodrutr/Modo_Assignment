@@ -5,8 +5,25 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if [[ ! -d ".venv" ]]; then
-  python3 -m venv .venv
+fail_python_version() {
+  echo "This launcher requires Python 3.12.x."
+  echo "Install python3.12 and recreate .venv before running the app."
+  exit 1
+}
+
+if [[ -d ".venv" ]]; then
+  if ! .venv/bin/python - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)
+PY
+  then
+    fail_python_version
+  fi
+else
+  if ! command -v python3.12 >/dev/null 2>&1; then
+    fail_python_version
+  fi
+  python3.12 -m venv .venv
 fi
 
 PYTHON_BIN=".venv/bin/python"

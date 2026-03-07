@@ -11,6 +11,12 @@ This project is an annual screener, not a daily dashboard. It uses historical ER
 
 The app stays honest about scope. It screens **ERCOT hubs and load zones**, not individual nodes.
 
+## Supported Environment
+
+- verified against `Python 3.12.x`
+- includes `.python-version` and `runtime.txt` markers for that runtime
+- `gridstatus==0.34.0` may fail to install under `Python 3.13`, so `3.12.x` is the supported submission path
+
 ## What The App Does
 
 - ranks every ERCOT hub/load-zone location for the selected annual lens
@@ -93,9 +99,9 @@ The expanded annual metrics artifact now includes:
 ### 1. Install dependencies
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ### 2. Pull and validate ERCOT data
@@ -116,13 +122,18 @@ python -m src.analytics.metrics --year 2025
 streamlit run app.py
 ```
 
-On macOS you can also double-click [Run_ERCOT_Screener.command](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.command). It bootstraps `.venv`, validates data availability, builds missing metrics artifacts, and launches Streamlit.
+On macOS you can also double-click [Run_ERCOT_Screener.command](Run_ERCOT_Screener.command). It expects `Python 3.12.x`, bootstraps `.venv`, validates data availability, builds missing metrics artifacts, and launches Streamlit.
 
-On Windows, the repo also includes [Run_ERCOT_Screener.bat](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.bat) and [Run_ERCOT_Screener.ps1](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.ps1). Those launchers are source-aligned with the macOS runner, but they were not runtime-verified in this macOS environment.
+On Windows, the repo also includes [Run_ERCOT_Screener.bat](Run_ERCOT_Screener.bat) and [Run_ERCOT_Screener.ps1](Run_ERCOT_Screener.ps1). Those launchers are aligned to the same `Python 3.12.x` requirement, but they were not runtime-verified in this macOS environment.
+
+The submitted artifact is the Git repo. Local virtual environments, caches, generated Parquet outputs, and OS-specific archive folders are intentionally excluded from version control.
 
 ## Verification Commands
 
 ```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 python -m unittest discover -s tests
 python -m src.data.fetch --year 2025
 python -m src.analytics.metrics --year 2025
@@ -134,6 +145,7 @@ python qa_check.py
 
 ```text
 Modo_Assignment/
+├── .python-version
 ├── app.py
 ├── README.md
 ├── ARCHITECTURE.md
@@ -143,6 +155,7 @@ Modo_Assignment/
 ├── Run_ERCOT_Screener.ps1
 ├── qa_check.py
 ├── requirements.txt
+├── runtime.txt
 ├── data/
 │   ├── raw/
 │   ├── processed/
@@ -179,7 +192,7 @@ Modo_Assignment/
 This repo intentionally documents AI usage because the take-home explicitly values it.
 
 - architecture and scope control were front-loaded so the project stayed within a defensible 2-4 hour product envelope
-- verification, corrections, and unresolved items are logged in [AI-Assistant.txt](/Users/timothywoodruff/Desktop/Modo_Assignment/AI-Assistant.txt)
+- the reviewer-facing AI note is summarized in [AI-Assistant.txt](AI-Assistant.txt)
 - architectural decisions stayed anchored to the single truth path, with presentation logic kept downstream of precomputed Parquet artifacts
 
-The ledger is meant to be readable by a human reviewer without requiring terminal logs or chat history.
+The AI note is meant to be readable by a human reviewer without requiring terminal logs or chat history.
