@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -12,6 +14,7 @@ from src.config import (
     DURATION_OPTIONS,
     EFFECTIVE_PRICE_SCALE,
     HEATMAP_SCALE,
+    LENS_KEYS,
     MONTH_ORDER,
     PALETTE,
     PROFILE_LABELS,
@@ -54,8 +57,18 @@ st.markdown(
 
     .block-container {{
         max-width: 1240px;
-        padding-top: 1.6rem;
+        padding-top: 1.55rem;
         padding-bottom: 2.5rem;
+    }}
+
+    [data-testid="stAppViewContainer"] > .main {{
+        padding-top: 0.2rem;
+    }}
+
+    header[data-testid="stHeader"] {{
+        background: rgba(246, 242, 235, 0.84);
+        border-bottom: 1px solid {PALETTE["line"]};
+        backdrop-filter: blur(12px);
     }}
 
     h1, h2, h3, h4 {{
@@ -92,6 +105,22 @@ st.markdown(
         color: {PALETTE["muted"]} !important;
         font-size: 0.70rem !important;
         font-weight: 600 !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.25 !important;
+        min-height: 2.4em;
+    }}
+
+    [data-testid="stMetricLabel"] > div,
+    [data-testid="stMetricLabel"] p,
+    [data-testid="stMetricLabel"] label,
+    [data-testid="stMetricLabel"] span {{
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        display: block !important;
+        word-break: break-word !important;
     }}
 
     [data-testid="stMetricValue"] {{
@@ -136,22 +165,72 @@ st.markdown(
         color: {PALETTE["muted"]};
         max-width: 860px;
         line-height: 1.55;
-        margin-top: -0.25rem;
-        margin-bottom: 1.1rem;
+        margin-top: 0;
+        margin-bottom: 0.65rem;
     }}
 
-    .section-card {{
+    .hero-kicker {{
+        color: {PALETTE["sea"]};
+        font-family: {DISPLAY_FONT};
+        font-size: 1rem;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.3rem;
+    }}
+
+    .hero-title {{
+        color: {PALETTE["ink"]};
+        font-family: {DISPLAY_FONT};
+        font-size: 2.4rem;
+        font-weight: 675;
+        letter-spacing: -0.03em;
+        line-height: 1.02;
+        margin: 0 0 0.45rem 0;
+        max-width: 900px;
+    }}
+
+    [data-testid="stRadio"] {{
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 0;
+    }}
+
+    [data-testid="stRadio"] > div {{
         background: rgba(255, 252, 247, 0.72);
         border: 1px solid {PALETTE["line"]};
         border-radius: 20px;
-        padding: 1rem 1.1rem 1.05rem 1.1rem;
+        padding: 0.9rem 1rem 0.8rem 1rem;
         box-shadow: 0 12px 28px rgba(31, 38, 40, 0.05);
+    }}
+
+    [data-testid="stSkeleton"],
+    .stSkeleton,
+    [class*="skeleton"] {{
+        display: none !important;
     }}
 
     .section-caption {{
         color: {PALETTE["muted"]};
         font-size: 0.8rem;
         line-height: 1.45;
+        margin-top: 0.6rem;
+    }}
+
+    .control-note {{
+        color: {PALETTE["muted"]};
+        font-size: 0.92rem;
+        line-height: 1.5;
+        padding: 0.9rem 0 0 0.15rem;
+        max-width: 34rem;
+    }}
+
+    .chart-kicker {{
+        color: {PALETTE["ink"]};
+        font-family: {DISPLAY_FONT};
+        font-size: 0.95rem;
+        font-weight: 620;
+        margin-bottom: 0.45rem;
     }}
 
     [data-testid="stPlotlyChart"] {{
@@ -165,18 +244,96 @@ st.markdown(
 
 
 @st.cache_data
+def _read_parquet_cached(path_str: str, mtime_ns: int) -> pd.DataFrame:
+    _ = mtime_ns
+    return pd.read_parquet(path_str)
+
+
+def _required_metric_columns() -> set[str]:
+    required = {
+        "location",
+        "location_type",
+        "best_fit_lens",
+        "best_fit_rank",
+        "observations",
+    }
+    for profile_key, duration_hours in LENS_KEYS:
+        required.update(
+            {
+                lens_metric_column(profile_key, duration_hours, "rank"),
+                lens_metric_column(profile_key, duration_hours, "score"),
+                lens_metric_column(profile_key, duration_hours, "effective_avg_price_usd_per_mwh"),
+                lens_metric_column(profile_key, duration_hours, "annual_cost_reduction_pct"),
+                lens_metric_column(profile_key, duration_hours, "annual_cost_reduction_usd_per_mw_year"),
+                lens_metric_column(profile_key, duration_hours, "effective_annual_cost_usd_per_mw_year"),
+                lens_metric_column(profile_key, duration_hours, "baseline_annual_cost_usd_per_mw_year"),
+                lens_metric_column(profile_key, duration_hours, "profitable_day_share"),
+                lens_metric_column(profile_key, duration_hours, "p95_active_hour_price_usd_per_mwh"),
+                lens_metric_column(profile_key, duration_hours, "p95_active_hour_effective_price_usd_per_mwh"),
+                lens_metric_column(profile_key, duration_hours, "p95_active_hour_reduction_pct"),
+            }
+        )
+    return required
+
+
+def _load_parquet_artifact(path: Path) -> pd.DataFrame:
+    return _read_parquet_cached(str(path), path.stat().st_mtime_ns)
+
+
+def _stop_for_schema_error(path: Path, missing_columns: list[str]) -> None:
+    st.error(
+        "The dashboard found a stale metrics artifact that does not match the V3 schema. "
+        "Rebuild the analytics artifacts, then refresh the app."
+    )
+    st.code(f".venv/bin/python -m src.analytics.metrics --year {SETTINGS.target_year}")
+    st.caption(f"Artifact: {path}")
+    st.caption(f"Missing columns: {', '.join(missing_columns[:12])}")
+    st.stop()
+
+
 def load_metrics() -> pd.DataFrame:
-    return pd.read_parquet(SETTINGS.metrics_path(SETTINGS.target_year))
+    path = SETTINGS.metrics_path(SETTINGS.target_year)
+    metrics_frame = _load_parquet_artifact(path)
+    missing_columns = sorted(_required_metric_columns().difference(metrics_frame.columns))
+    if missing_columns:
+        _stop_for_schema_error(path, missing_columns)
+    return metrics_frame
 
 
-@st.cache_data
 def load_daily_profile_windows() -> pd.DataFrame:
-    return pd.read_parquet(SETTINGS.daily_profile_windows_path(SETTINGS.target_year))
+    path = SETTINGS.daily_profile_windows_path(SETTINGS.target_year)
+    daily_frame = _load_parquet_artifact(path)
+    required = {
+        "location",
+        "profile",
+        "local_date",
+        "4h_profitable",
+        "8h_profitable",
+        "4h_best_spread_usd_per_mwh",
+        "8h_best_spread_usd_per_mwh",
+    }
+    missing_columns = sorted(required.difference(daily_frame.columns))
+    if missing_columns:
+        _stop_for_schema_error(path, missing_columns)
+    return daily_frame
 
 
-@st.cache_data
 def load_hourly_profile_shape() -> pd.DataFrame:
-    return pd.read_parquet(SETTINGS.hourly_profile_shape_path(SETTINGS.target_year))
+    path = SETTINGS.hourly_profile_shape_path(SETTINGS.target_year)
+    shape_frame = _load_parquet_artifact(path)
+    required = {
+        "location",
+        "profile",
+        "duration_hours",
+        "local_month_label",
+        "local_hour",
+        "market_price_avg_usd_per_mwh",
+        "effective_active_price_avg_usd_per_mwh",
+    }
+    missing_columns = sorted(required.difference(shape_frame.columns))
+    if missing_columns:
+        _stop_for_schema_error(path, missing_columns)
+    return shape_frame
 
 
 metrics = load_metrics()
@@ -215,17 +372,20 @@ def _active_metrics_frame(profile_key: str, duration_hours: int) -> pd.DataFrame
 
 
 def _render_controls() -> tuple[str, int]:
-    controls_left, controls_right = st.columns([2.2, 1.2], gap="large")
-    with controls_left:
-        st.markdown("### Annual Screener")
-        st.markdown(
-            '<p class="hero-subtitle">Screen ERCOT hubs and load zones for annual large-load deployment. '
-            'Switch between 24/7 training and weekday daytime inference, then compare how 4-hour and 8-hour '
-            'battery flexibility changes delivered cost, profitable day frequency, and active-hour risk.</p>',
-            unsafe_allow_html=True,
-        )
-    with controls_right:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    st.markdown('<div class="hero-kicker">Annual Screener</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<h1 class="hero-title">ERCOT Large-Load Flexibility Screener</h1>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p class="hero-subtitle">Screen ERCOT hubs and load zones for annual large-load deployment. '
+        'Switch between 24/7 training and weekday daytime inference, then compare how 4-hour and 8-hour '
+        'battery flexibility changes delivered cost, profitable day frequency, and active-hour risk.</p>',
+        unsafe_allow_html=True,
+    )
+
+    controls_profile, controls_duration, controls_note = st.columns([1.75, 1.05, 2.25], gap="large")
+    with controls_profile:
         selected_profile = st.radio(
             "Load profile",
             options=list(PROFILE_ORDER),
@@ -233,6 +393,7 @@ def _render_controls() -> tuple[str, int]:
             horizontal=True,
             key="selected_profile",
         )
+    with controls_duration:
         selected_duration = st.radio(
             "Primary battery duration",
             options=list(DURATION_OPTIONS),
@@ -240,12 +401,12 @@ def _render_controls() -> tuple[str, int]:
             horizontal=True,
             key="selected_duration",
         )
+    with controls_note:
         st.markdown(
-            '<p class="section-caption">The primary lens controls ranking, map coloring, and headline KPIs. '
-            'The drilldown still shows both 4h and 8h for the selected load profile.</p>',
+            '<div class="control-note">The primary lens controls ranking, map coloring, and headline KPIs. '
+            'The drilldown still shows both 4h and 8h for the selected load profile.</div>',
             unsafe_allow_html=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
     return selected_profile, int(selected_duration)
 
 
@@ -281,9 +442,34 @@ def _selected_row(location: str) -> pd.Series:
     return metrics.loc[metrics["location"].eq(location)].iloc[0]
 
 
+def _render_focus_selector(
+    active_frame: pd.DataFrame,
+    rank_column: str,
+    label: str,
+    widget_key: str,
+) -> None:
+    location_order = active_frame["location"].tolist()
+    location_type_lookup = active_frame.set_index("location")["location_type"].to_dict()
+    rank_lookup = active_frame.set_index("location")[rank_column].astype(int).to_dict()
+
+    selected_location = st.selectbox(
+        label,
+        options=location_order,
+        index=location_order.index(st.session_state["selected_location"]),
+        format_func=lambda location: (
+            f"#{rank_lookup[location]} · {location} · {location_type_lookup[location]}"
+        ),
+        key=widget_key,
+    )
+    if selected_location != st.session_state["selected_location"]:
+        st.session_state["selected_location"] = selected_location
+        st.rerun()
+
+
 def _render_map_section(profile_key: str, duration_hours: int) -> None:
     st.markdown("### Geographic Screen")
     map_frame = build_location_map_frame(metrics, profile_key, duration_hours)
+    rank_column = _lens_column(profile_key, duration_hours, "rank")
     valid_locations = map_frame["location"].tolist()
     if st.session_state["selected_location"] not in valid_locations:
         st.session_state["selected_location"] = str(map_frame.iloc[0]["location"])
@@ -291,7 +477,6 @@ def _render_map_section(profile_key: str, duration_hours: int) -> None:
     map_col, detail_col = st.columns([2.8, 1.7], gap="large")
 
     with map_col:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.caption("Marker color reflects annual lens score. Marker size reflects annual cost reduction %. Click a location to persist selection.")
         map_event = st.plotly_chart(
             build_texas_location_map(
@@ -305,7 +490,6 @@ def _render_map_section(profile_key: str, duration_hours: int) -> None:
             on_select="rerun",
             selection_mode="points",
         )
-        st.markdown("</div>", unsafe_allow_html=True)
 
     clicked_location = extract_selected_location(
         selection_event=map_event,
@@ -318,7 +502,12 @@ def _render_map_section(profile_key: str, duration_hours: int) -> None:
 
     selected = _selected_row(st.session_state["selected_location"])
     with detail_col:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        _render_focus_selector(
+            _active_metrics_frame(profile_key, duration_hours),
+            rank_column,
+            "Focus location (active-lens rank)",
+            f"focus_location_map_{rank_column}",
+        )
         st.markdown(f"#### {selected['location']}")
         st.markdown(build_location_narrative(selected, profile_key, duration_hours))
         card_left, card_right = st.columns(2)
@@ -335,14 +524,30 @@ def _render_map_section(profile_key: str, duration_hours: int) -> None:
                 delta=f"{selected[_lens_column(profile_key, 8, 'annual_cost_reduction_pct')]:.1f}% reduction",
             )
         st.metric("Best-fit lens", str(selected["best_fit_lens"]), delta=f"Rank {int(selected['best_fit_rank'])}")
-        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _style_ranking_table(table: pd.DataFrame) -> pd.io.formats.style.Styler:
+    zebra_light = "#efe5d8"
+    zebra_dark = "#e4d5c3"
+
+    def _row_fill(row: pd.Series) -> list[str]:
+        background = zebra_light if int(row.name) % 2 == 0 else zebra_dark
+        return [f"background-color: {background}; color: {PALETTE['ink']};"] * len(row)
+
+    return (
+        table.style.apply(_row_fill, axis=1)
+        .set_properties(**{"border-color": "rgba(31, 38, 40, 0.08)"})
+        .format(na_rep="—")
+    )
 
 
 def _render_ranking_table(profile_key: str) -> None:
     st.markdown("### Ranking Table")
     reviewer_table = build_reviewer_table(metrics, profile_key)
     formatted = format_reviewer_table(reviewer_table)
-    st.dataframe(formatted, use_container_width=True, hide_index=True, height=min(44 * len(formatted) + 40, 760))
+    styled = _style_ranking_table(formatted)
+    table_height = min(42 + 35 * len(formatted), 620)
+    st.dataframe(styled, use_container_width=True, hide_index=True, height=table_height)
     st.download_button(
         label="Download reviewer CSV",
         data=reviewer_table.to_csv(index=False),
@@ -436,7 +641,7 @@ def _render_annual_summary(selected: pd.Series, profile_key: str, duration_hours
         st.plotly_chart(pre_post, use_container_width=True)
 
 
-def _heatmap_figure(frame: pd.DataFrame, value_column: str, title: str, colorbar_title: str) -> go.Figure:
+def _heatmap_figure(frame: pd.DataFrame, value_column: str, colorbar_title: str) -> go.Figure:
     pivot = (
         frame.pivot(index="local_hour", columns="local_month_label", values=value_column)
         .reindex(index=list(range(24)), columns=list(MONTH_ORDER))
@@ -457,7 +662,7 @@ def _heatmap_figure(frame: pd.DataFrame, value_column: str, title: str, colorbar
             },
         )
     )
-    fig.update_layout(title={"text": title, "font": {"size": 14}}, margin={"l": 40, "r": 22, "t": 50, "b": 24})
+    fig.update_layout(margin={"l": 40, "r": 22, "t": 18, "b": 24})
     fig.update_yaxes(title="Local hour", autorange="reversed")
     fig.update_xaxes(side="top")
     return _style_plot(fig, 420)
@@ -533,6 +738,68 @@ def _monthly_comparison_figure(
     return _style_plot(fig, 320)
 
 
+def _monthly_profitable_share_figure(monthly: pd.DataFrame) -> go.Figure:
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=monthly["local_month_label"],
+                y=monthly["profitable_day_share"],
+                marker={
+                    "color": monthly["profitable_day_share"],
+                    "colorscale": [
+                        [0.0, "#d8ddd6"],
+                        [0.5, PALETTE["sea_soft"]],
+                        [1.0, PALETTE["sea"]],
+                    ],
+                    "cmin": 0.0,
+                    "cmax": 100.0,
+                    "line": {"width": 0},
+                },
+                hovertemplate="%{x}<br>%{y:.1f}% of active days profitable<extra></extra>",
+                showlegend=False,
+            )
+        ]
+    )
+    fig.update_yaxes(
+        title="Profitable day share (%)",
+        range=[0, 100],
+        gridcolor=PALETTE["line"],
+        zeroline=False,
+    )
+    fig.update_xaxes(categoryorder="array", categoryarray=list(MONTH_ORDER))
+    return _style_plot(fig, 250)
+
+
+def _monthly_best_spread_figure(monthly: pd.DataFrame, duration_hours: int) -> go.Figure:
+    accent = PALETTE["sand"] if duration_hours == 4 else PALETTE["accent"]
+    fig = go.Figure(
+        data=[
+            go.Scatter(
+                x=monthly["local_month_label"],
+                y=monthly["average_best_spread"],
+                mode="lines+markers",
+                line={"width": 3, "color": accent},
+                marker={
+                    "size": 9,
+                    "color": accent,
+                    "line": {"width": 2, "color": "rgba(255,252,247,0.9)"},
+                },
+                fill="tozeroy",
+                fillcolor="rgba(184, 157, 125, 0.12)" if duration_hours == 4 else "rgba(127, 79, 63, 0.10)",
+                hovertemplate="%{x}<br>$%{y:.2f}/MWh average best spread<extra></extra>",
+                showlegend=False,
+            )
+        ]
+    )
+    fig.update_yaxes(
+        title="Average best spread ($/MWh)",
+        gridcolor=PALETTE["line"],
+        zeroline=False,
+    )
+    fig.update_xaxes(categoryorder="array", categoryarray=list(MONTH_ORDER))
+    return _style_plot(fig, 250)
+
+
 def _render_temporal_shape(selected_location: str, profile_key: str, duration_hours: int) -> None:
     frame = hourly_shape.loc[
         hourly_shape["location"].eq(selected_location)
@@ -542,21 +809,24 @@ def _render_temporal_shape(selected_location: str, profile_key: str, duration_ho
     ]
     heat_left, heat_right = st.columns(2, gap="large")
     with heat_left:
+        st.markdown('<div class="chart-kicker">Market price shape</div>', unsafe_allow_html=True)
         st.plotly_chart(
             _heatmap_figure(
                 frame,
                 "market_price_avg_usd_per_mwh",
-                "Market price shape",
                 "Market price<br>($/MWh)",
             ),
             use_container_width=True,
         )
     with heat_right:
+        st.markdown(
+            f'<div class="chart-kicker">Effective shaped price ({duration_hours}h)</div>',
+            unsafe_allow_html=True,
+        )
         st.plotly_chart(
             _heatmap_figure(
                 frame,
                 "effective_active_price_avg_usd_per_mwh",
-                f"Effective shaped price ({duration_hours}h)",
                 "Effective price<br>($/MWh)",
             ),
             use_container_width=True,
@@ -567,7 +837,7 @@ def _render_temporal_shape(selected_location: str, profile_key: str, duration_ho
     )
 
 
-def _representative_days(selected_location: str, profile_key: str, duration_hours: int) -> pd.DataFrame:
+def _daily_window_log(selected_location: str, profile_key: str, duration_hours: int) -> pd.DataFrame:
     prefix = f"{duration_hours}h"
     frame = daily_windows.loc[
         daily_windows["location"].eq(selected_location)
@@ -575,8 +845,8 @@ def _representative_days(selected_location: str, profile_key: str, duration_hour
         & daily_windows["active_load_mwh"].gt(0),
         :,
     ].copy()
-    sort_column = f"{prefix}_best_spread_usd_per_mwh"
-    view = frame.loc[
+    view = (
+        frame.loc[
         :,
         [
             "local_date",
@@ -587,10 +857,8 @@ def _representative_days(selected_location: str, profile_key: str, duration_hour
             f"{prefix}_profitable",
         ],
     ]
-    worst = view.nsmallest(3, sort_column).assign(bucket="Worst")
-    best = view.nlargest(3, sort_column).assign(bucket="Best")
-    out = pd.concat([best, worst], ignore_index=True)
-    out = out.rename(
+        .sort_values("local_date", ascending=True, kind="mergesort")
+        .rename(
         columns={
             "local_date": "Date",
             "local_month_label": "Month",
@@ -598,10 +866,20 @@ def _representative_days(selected_location: str, profile_key: str, duration_hour
             f"{prefix}_charge_start_hour": "Charge Start Hour",
             f"{prefix}_discharge_start_hour": "Discharge Start Hour",
             f"{prefix}_profitable": "Profitable",
-            "bucket": "Bucket",
         }
     )
-    return out
+    )
+    out = view.copy()
+    out["Date"] = pd.to_datetime(out["Date"]).dt.strftime("%Y-%m-%d")
+    out["Best Spread ($/MWh)"] = out["Best Spread ($/MWh)"].map(lambda value: f"${value:,.2f}")
+    out["Charge Start Hour"] = out["Charge Start Hour"].map(
+        lambda value: f"{int(value):02d}:00" if pd.notna(value) else "—"
+    )
+    out["Discharge Start Hour"] = out["Discharge Start Hour"].map(
+        lambda value: f"{int(value):02d}:00" if pd.notna(value) else "—"
+    )
+    out["Profitable"] = out["Profitable"].map(lambda value: "Yes" if bool(value) else "No")
+    return out.reset_index(drop=True)
 
 
 def _render_flexibility_tab(selected: pd.Series, profile_key: str, duration_hours: int) -> None:
@@ -624,35 +902,27 @@ def _render_flexibility_tab(selected: pd.Series, profile_key: str, duration_hour
             .sort_values("local_month")
         )
 
-        fig = go.Figure()
-        fig.add_trace(
-            go.Bar(
-                x=monthly["local_month_label"],
-                y=monthly["profitable_day_share"],
-                marker_color=PALETTE["sea_soft"],
-                name="Profitable day share",
-                hovertemplate="%{x}<br>%{y:.1f}% of active days<extra></extra>",
+        monthly_cards = st.columns(3, gap="medium")
+        best_share_row = monthly.loc[monthly["profitable_day_share"].idxmax()]
+        best_spread_row = monthly.loc[monthly["average_best_spread"].idxmax()]
+        weakest_spread_row = monthly.loc[monthly["average_best_spread"].idxmin()]
+        monthly_cards[0].metric("Best profitable month", str(best_share_row["local_month_label"]), f"{best_share_row['profitable_day_share']:.1f}%")
+        monthly_cards[1].metric("Best spread month", str(best_spread_row["local_month_label"]), f"${best_spread_row['average_best_spread']:.2f}/MWh")
+        monthly_cards[2].metric("Weakest spread month", str(weakest_spread_row["local_month_label"]), f"${weakest_spread_row['average_best_spread']:.2f}/MWh")
+
+        monthly_left, monthly_right = st.columns(2, gap="large")
+        with monthly_left:
+            st.markdown('<div class="chart-kicker">Monthly profitable-day share</div>', unsafe_allow_html=True)
+            st.plotly_chart(
+                _monthly_profitable_share_figure(monthly),
+                use_container_width=True,
             )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=monthly["local_month_label"],
-                y=monthly["average_best_spread"],
-                mode="lines+markers",
-                marker={"size": 8},
-                line={"width": 2.4, "color": PALETTE["accent"]},
-                name="Average best spread",
-                yaxis="y2",
-                hovertemplate="%{x}<br>$%{y:.2f}/MWh<extra></extra>",
+        with monthly_right:
+            st.markdown('<div class="chart-kicker">Monthly average best spread</div>', unsafe_allow_html=True)
+            st.plotly_chart(
+                _monthly_best_spread_figure(monthly, duration_hours),
+                use_container_width=True,
             )
-        )
-        fig.update_layout(
-            yaxis={"title": "Profitable day share (%)", "gridcolor": PALETTE["line"], "zeroline": False},
-            yaxis2={"title": "Average best spread ($/MWh)", "overlaying": "y", "side": "right", "showgrid": False},
-            barmode="group",
-        )
-        _style_plot(fig, 330)
-        st.plotly_chart(fig, use_container_width=True)
 
         spread_distribution = go.Figure(
             data=[
@@ -670,7 +940,13 @@ def _render_flexibility_tab(selected: pd.Series, profile_key: str, duration_hour
         _style_plot(spread_distribution, 280)
         st.plotly_chart(spread_distribution, use_container_width=True)
 
-        st.dataframe(_representative_days(str(selected["location"]), profile_key, duration_hours), use_container_width=True, hide_index=True)
+        st.markdown('<div class="chart-kicker">Daily window log</div>', unsafe_allow_html=True)
+        st.dataframe(
+            _daily_window_log(str(selected["location"]), profile_key, duration_hours),
+            use_container_width=True,
+            hide_index=True,
+            height=360,
+        )
 
     with raw_col:
         if duration_hours == 8:
@@ -688,8 +964,16 @@ def _render_flexibility_tab(selected: pd.Series, profile_key: str, duration_hour
 
 
 def _render_analyst_console(profile_key: str, duration_hours: int) -> None:
+    active_frame = _active_metrics_frame(profile_key, duration_hours)
+    rank_column = _lens_column(profile_key, duration_hours, "rank")
     selected = _selected_row(st.session_state["selected_location"])
     st.markdown("### Analyst Console")
+    _render_focus_selector(
+        active_frame,
+        rank_column,
+        "Analyst focus (active-lens rank)",
+        f"focus_location_console_{rank_column}",
+    )
     tab_summary, tab_shape, tab_4h, tab_8h = st.tabs(
         ["Annual Summary", "Temporal Shape", "4h Flexibility", "8h Flexibility"]
     )
@@ -726,11 +1010,11 @@ def main() -> None:
     active_frame = _active_metrics_frame(selected_profile, selected_duration)
     _render_hero_cards(active_frame, selected_profile, selected_duration)
     st.markdown("---")
+    _render_analyst_console(selected_profile, selected_duration)
+    st.markdown("---")
     _render_map_section(selected_profile, selected_duration)
     st.markdown("---")
     _render_ranking_table(selected_profile)
-    st.markdown("---")
-    _render_analyst_console(selected_profile, selected_duration)
     st.markdown("---")
     _render_methodology(selected_profile)
 

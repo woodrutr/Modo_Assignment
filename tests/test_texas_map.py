@@ -54,6 +54,8 @@ class TexasMapTests(unittest.TestCase):
         marker_trace = figure.data[1]
         self.assertEqual(marker_trace.selected.marker.color, "#7f4f3f")
         self.assertEqual(marker_trace.selected.marker.size, 28)
+        self.assertEqual(figure.layout.clickmode, "event+select")
+        self.assertFalse(bool(figure.layout.dragmode))
 
     def test_extract_selected_location_resolves_point_index(self) -> None:
         frame = build_location_map_frame(self.metrics, "training_24x7", 4)

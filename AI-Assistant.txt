@@ -71,3 +71,70 @@ Open / Pending
 - `compiled_backup/` and `src/_sourceless.py` remain on disk as recovery artifacts. They are no longer imported by the active core pipeline, but they have not been removed in this pass.
 - 2026-03-07T11:37:18-05:00 [correction] The immediately preceding pending note about a missing Windows launcher is no longer current. Added `Run_ERCOT_Screener.ps1` and `Run_ERCOT_Screener.bat` after the main verification block so the repo again exposes a Windows launch surface aligned to the current artifact contract.
 - 2026-03-07T11:37:18-05:00 [pending] Windows launcher runtime behavior remains unverified because this session only had macOS execution available. The files now exist, but no Windows shell or double-click path was exercised.
+- 2026-03-07T15:41:41-05:00 [fix] Streamlit was still vulnerable to stale legacy metrics caches because `st.cache_data` was keyed only by function inputs, not artifact mtimes. Updated `app.py` to load Parquet artifacts through file-mtime-aware cache keys and to hard-check the V3 schema before any UI logic dereferences lens columns.
+- 2026-03-07T15:41:41-05:00 [fix] Updated both launchers to treat schema-stale metrics files the same as missing files. `Run_ERCOT_Screener.command` and `Run_ERCOT_Screener.ps1` now rebuild analytics artifacts when the required V3 lens columns are absent.
+- 2026-03-07T15:41:41-05:00 [verification] Reverified the stale-artifact fix with `.venv/bin/python -m py_compile app.py`, `.venv/bin/python -m unittest discover -s tests`, `OPEN_BROWSER=0 CHECK_ONLY=1 zsh Run_ERCOT_Screener.command`, and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8512`. All passed.
+- 2026-03-07T15:45:23-05:00 [ui] Removed the fake HTML open/close `section-card` wrapper pattern from `app.py`. Those tags were not actually enclosing Streamlit widgets and were rendering as empty blocks, which created the visible blank band and clipped-looking top surfaces.
+- 2026-03-07T15:45:23-05:00 [ui] Tightened the top-of-page layout by reducing `block-container` top padding, making the Streamlit header translucent instead of a large white slab, replacing the top `h3` with a dedicated `hero-kicker`, and styling radios directly instead of trying to wrap them in raw HTML.
+- 2026-03-07T15:45:23-05:00 [verification] Verified the spacing fix with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8513`. Both passed.
+- 2026-03-07T15:48:09-05:00 [ui] The pill-shaped mystery bars were most likely transient Streamlit placeholder/skeleton chrome combined with an overly broad radio-widget selector. Narrowed the radio styling to `stRadio > div` and added a placeholder suppression rule in `app.py` so those bars do not present as persistent UI elements.
+- 2026-03-07T15:48:09-05:00 [verification] Verified the placeholder/radio CSS cleanup with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8514`. Both passed.
+- 2026-03-07T15:49:06-05:00 [ui] Metric card labels were still truncating with ellipses under narrow card widths. Updated `app.py` to force `stMetricLabel` content to wrap and remain fully visible instead of honoring Streamlit’s default text-overflow behavior.
+- 2026-03-07T15:49:06-05:00 [verification] Verified the metric-label wrapping fix with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8515`. Both passed.
+- 2026-03-07T15:50:07-05:00 [ui] The temporal heatmap titles were overlapping the month labels because the Plotly figure title and the top-positioned x-axis were sharing the same vertical space. Moved those titles out of the figure and into the Streamlit layout, and reduced the figure top margin accordingly.
+- 2026-03-07T15:50:07-05:00 [verification] Verified the heatmap-title layout fix with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8516`. Both passed.
+- 2026-03-07T15:51:41-05:00 [ui] Replaced the monthly dual-axis flexibility chart in `app.py`. The prior combo chart mixed profitable-day share bars and best-spread line values on competing axes, which read as cluttered and visually unstable. The new layout uses three compact monthly summary cards plus two separate single-purpose charts: one for monthly profitable-day share and one for monthly average best spread.
+- 2026-03-07T15:51:41-05:00 [verification] Verified the flexibility-chart redesign with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8517`. Both passed.
+- 2026-03-07T15:53:24-05:00 [ui] Replaced the six-row “representative days” table with a full chronological daily window log in `app.py`. The old surface could not show month progression across the year and leaked raw float precision for `$ / MWh` values. The new log scrolls through the full year, sorts by date, and formats `Best Spread ($/MWh)` with a dollar sign and two decimals. Charge and discharge hours now render as `HH:00`.
+- 2026-03-07T15:53:24-05:00 [verification] Verified the daily-log formatting change with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8518`. Both passed.
+- 2026-03-07T15:55:12-05:00 [ui] The raw metrics table was behaving as a pure selected-location detail view, which made it look “stuck” on the map-selected location. Added explicit focus selectors by active-lens rank in both the geographic detail panel and the analyst console so any hub or zone can be selected directly without relying on map clicks.
+- 2026-03-07T15:55:12-05:00 [verification] Verified the new rank-based focus selectors with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8519`. Both passed.
+- 2026-03-07T15:56:50-05:00 [ui] The persistent top-banner spacing issue was caused by the hero copy and control stack sharing a single uneven Streamlit column row. Flattened the controls into a compact horizontal control band beneath the intro copy, replacing the tall right-column stack that forced a large dead area under the left-hand hero text.
+- 2026-03-07T15:56:50-05:00 [verification] Verified the top-banner restructure with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8520`. Both passed.
+
+Session Addendum
+
+Timestamped Notes
+- 2026-03-07T16:00:49-05:00 [ui] The ranking table was rendering dead space beneath the last real row because `st.dataframe(...)` was given an oversized fixed height relative to the actual 15-row payload. Tightened the height contract in `app.py` to track the real row count and switched the ranking grid to a `pandas.Styler` zebra fill so the table reads as a distinct surface rather than blending into the dashboard background.
+- 2026-03-07T16:00:49-05:00 [decision] Kept the zebra styling local to the ranking table render path instead of applying global dataframe striping. The raw diagnostics tables serve a different purpose and should not silently inherit the same presentation treatment.
+- 2026-03-07T16:00:49-05:00 [verification] Verified the ranking-table cleanup with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8521`. Both passed.
+- 2026-03-07T16:02:42-05:00 [ui] Removed the stray Plotly `trace 1` legend from the Texas map. The marker `Scattergeo` trace in `src/presentation/texas_map.py` had been left with the default legend behavior, so Plotly auto-generated a legend entry even though the decorative outline trace already had `showlegend=False`.
+- 2026-03-07T16:02:42-05:00 [fix] Added `showlegend=False` to the marker trace and to the figure layout in `src/presentation/texas_map.py` so the legend cannot reappear through trace defaults or future layout changes.
+- 2026-03-07T16:02:42-05:00 [verification] Verified the map legend removal with `.venv/bin/python -m py_compile src/presentation/texas_map.py app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8522`. Both passed.
+- 2026-03-07T16:04:04-05:00 [ui] Promoted the analyst console ahead of the geographic screen and ranking table in `app.py`. The selected-location annual economics are the main decision surface, so burying that console below the map and table was weakening the page hierarchy.
+- 2026-03-07T16:04:04-05:00 [verification] Verified the section-order change with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8523`. Both passed.
+- 2026-03-07T16:07:33-05:00 [fix] The Texas map was still not behaving like a click-select control because the figure layout never enabled Plotly click selection. Updated `src/presentation/texas_map.py` to use `clickmode="event+select"` and disabled drag selection so direct point clicks become the persistent selection path consumed by `app.py`.
+- 2026-03-07T16:07:33-05:00 [verification] Added a regression assertion in `tests/test_texas_map.py` for `figure.layout.clickmode == "event+select"` and `dragmode == False`, then verified the map contract with `.venv/bin/python -m unittest tests.test_texas_map` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8524`. Both passed.
+- 2026-03-07T16:11:22-05:00 [ui] Restored a real hero title to the top of the dashboard. The page had been reduced to a small `Annual Screener` kicker in `app.py`, which made the title appear “missing” whenever top spacing compressed under the sticky header. Added an explicit `h1` hero title and reopened the top container spacing so the title is visually anchored above the controls.
+- 2026-03-07T16:11:22-05:00 [verification] Verified the hero-title and spacing fix with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8525`. Both passed.
+- 2026-03-07T16:12:07-05:00 [fix] The ranking table still had one blank bottom row because the viewport height formula in `app.py` was still allocating `len(formatted) + 1` row slots. Removed the extra-row allowance so the grid height now scales to the actual number of rendered data rows.
+- 2026-03-07T16:12:07-05:00 [verification] Verified the revised ranking-table height with `.venv/bin/python -m py_compile app.py` and `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8526`. Both passed.
+
+Verified State
+- 2026-03-07T16:00:49-05:00 verified commands:
+- `.venv/bin/python -m py_compile app.py`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8521`
+- Result: the ranking table render path compiled cleanly and the dashboard booted headlessly with the tighter row-count-based grid height and zebra-striped ranking rows.
+- 2026-03-07T16:02:42-05:00 verified commands:
+- `.venv/bin/python -m py_compile src/presentation/texas_map.py app.py`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8522`
+- Result: the Texas map presentation layer compiled cleanly and the dashboard booted headlessly without relying on Plotly’s default legend behavior for the marker trace.
+- 2026-03-07T16:04:04-05:00 verified commands:
+- `.venv/bin/python -m py_compile app.py`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8523`
+- Result: the reordered dashboard compiled cleanly and booted headlessly with the analyst console promoted into the primary reading path above the map and ranking surfaces.
+- 2026-03-07T16:07:33-05:00 verified commands:
+- `.venv/bin/python -m unittest tests.test_texas_map`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8524`
+- Result: the Texas map tests passed with the click-selection contract asserted, and the dashboard booted headlessly with the new click-to-select layout settings.
+- 2026-03-07T16:11:22-05:00 verified commands:
+- `.venv/bin/python -m py_compile app.py`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8525`
+- Result: the dashboard compiled cleanly and booted headlessly with an explicit top-level hero title and increased top spacing beneath the sticky header.
+- 2026-03-07T16:12:07-05:00 verified commands:
+- `.venv/bin/python -m py_compile app.py`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8526`
+- Result: the dashboard compiled cleanly and booted headlessly with the ranking table height sized to the actual rendered row count rather than an extra placeholder row.
+
+Open / Pending
+- Manual browser confirmation of the ranking table’s final visual treatment remains pending. Headless startup is verified; a human check of the exact zebra contrast and the removal of blank bottom rows has not yet been re-recorded in this ledger.

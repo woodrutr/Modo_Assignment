@@ -216,6 +216,7 @@ def build_texas_location_map(
                 "Best-fit lens: <b>%{customdata[9]}</b>"
                 "<extra></extra>"
             ),
+            showlegend=False,
         )
     )
     figure.update_geos(
@@ -241,7 +242,9 @@ def build_texas_location_map(
         font={"family": BODY_FONT, "color": PALETTE["ink"]},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        dragmode="select",
+        clickmode="event+select",
+        dragmode=False,
+        showlegend=False,
     )
     return figure
 

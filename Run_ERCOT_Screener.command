@@ -54,11 +54,39 @@ print(SETTINGS.hourly_profile_shape_path(SETTINGS.target_year))
 PY
 )"
 
+METRICS_SCHEMA_OK="$("$PYTHON_BIN" - <<'PY'
+from pathlib import Path
+
+import pandas as pd
+
+from src.config import LENS_KEYS, SETTINGS, lens_metric_column
+
+path = SETTINGS.metrics_path(SETTINGS.target_year)
+if not Path(path).exists():
+    print("0")
+    raise SystemExit
+
+required = {"location", "location_type", "best_fit_lens", "best_fit_rank", "observations"}
+for profile_key, duration_hours in LENS_KEYS:
+    required.update(
+        {
+            lens_metric_column(profile_key, duration_hours, "rank"),
+            lens_metric_column(profile_key, duration_hours, "score"),
+            lens_metric_column(profile_key, duration_hours, "effective_avg_price_usd_per_mwh"),
+            lens_metric_column(profile_key, duration_hours, "annual_cost_reduction_pct"),
+        }
+    )
+
+frame = pd.read_parquet(path)
+print("1" if required.issubset(frame.columns) else "0")
+PY
+)"
+
 if [[ ! -f "$PROCESSED_PATH" ]]; then
   "$PYTHON_BIN" -m src.data.fetch
 fi
 
-if [[ ! -f "$METRICS_PATH" || ! -f "$DAILY_PROFILE_WINDOWS_PATH" || ! -f "$HOURLY_PROFILE_SHAPE_PATH" ]]; then
+if [[ ! -f "$METRICS_PATH" || ! -f "$DAILY_PROFILE_WINDOWS_PATH" || ! -f "$HOURLY_PROFILE_SHAPE_PATH" || "$METRICS_SCHEMA_OK" != "1" ]]; then
   "$PYTHON_BIN" -m src.analytics.metrics --year "$TARGET_YEAR"
 fi
 
