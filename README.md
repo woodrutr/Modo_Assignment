@@ -69,6 +69,8 @@ streamlit run app.py
 
 Opens a browser with the interactive dashboard. All timestamps are displayed in US/Central time.
 
+On macOS, you can also double-click [Run_ERCOT_Screener.command](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.command). It bootstraps `.venv`, installs dependencies, builds cached artifacts if missing, and launches the app.
+
 ## Repository Structure
 
 ```

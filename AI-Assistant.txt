@@ -11,6 +11,11 @@ Timestamped Notes
 - 2026-03-06T18:12:25-05:00 [correction] The four seed entries above were written before the wall-clock timestamp was captured and should be treated as approximate ordering markers, not authoritative verification times.
 - 2026-03-06T18:12:25-05:00 [fix] Replaced the invalid Plotly selection styling in `src/presentation/texas_map.py` so selected map markers use valid `color`, `size`, and `opacity` fields instead of the unsupported `selected.marker.line`.
 - 2026-03-06T18:12:25-05:00 [verification] Restored source-backed execution for the app, fetch pipeline, and metrics pipeline using `compiled_backup/` as the immutable source for surviving compiled modules. Verified unit tests, cached data fetch, metrics rebuild, and headless Streamlit startup.
+- 2026-03-07T07:01:25-05:00 [recovery] The macOS launcher file was absent after the source-surface recovery. Recreated `Run_ERCOT_Screener.command` so the repo again has a double-click entry point anchored to `src.config.SETTINGS` for target-year and artifact-path resolution.
+- 2026-03-07T07:01:25-05:00 [verification] Verified the restored launcher with `OPEN_BROWSER=0 CHECK_ONLY=1 zsh Run_ERCOT_Screener.command`. Adjusted the dependency probe so the runner only calls `pip install -r requirements.txt` if the active `.venv` cannot import the required runtime packages, avoiding unnecessary network calls.
+- 2026-03-07T10:23:49-05:00 [fix] Rewired the map focus flow in `app.py` to persist the selected location in `st.session_state`, rerender the map with the active selection, and rerun only when the clicked location changes. This fixes the non-persistent marker highlight and keeps the detail panel aligned to the active map selection.
+- 2026-03-07T10:23:49-05:00 [fix] Replaced the selected-location `st.json(...)` diagnostics block with a deterministic key/value metric table from `src/presentation/reviewer_table.py`, so raw metric values are visible even when JSON rendering is brittle for pandas-derived values.
+- 2026-03-07T10:23:49-05:00 [verification] Added a reviewer-table unit test for selected-location raw metrics and reverified app startup after the session-state map fix.
 
 Verified State
 - Pending verification after source restoration and Plotly map fix.
@@ -20,6 +25,13 @@ Verified State
 - `.venv/bin/python -m src.analytics.metrics --year 2025`
 - `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8506`
 - Result: targeted map regression tests passed, cached fetch and metric rebuild completed successfully, and the Streamlit app booted without the Plotly `selected.marker.line` error.
+- 2026-03-07T07:01:25-05:00 verified command:
+- `OPEN_BROWSER=0 CHECK_ONLY=1 zsh Run_ERCOT_Screener.command`
+- Result: the restored macOS runner completed successfully without forcing a dependency reinstall or app launch.
+- 2026-03-07T10:23:49-05:00 verified commands:
+- `.venv/bin/python -m unittest discover -s tests`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8507`
+- Result: 4 tests passed, including the new reviewer-table test, and the Streamlit app booted cleanly with the persisted map-selection state flow.
 
 Open / Pending
 - Verify `python -m unittest discover -s tests` passes with the new map regression test.
@@ -27,4 +39,5 @@ Open / Pending
 - Confirm restored source shims are sufficient for fetch/metrics commands, not only app startup.
 - Resolved as of 2026-03-06T18:12:25-05:00: the three verification items above are now satisfied.
 - Remaining uncertainty: source parity with the lost precompiled `.py` files is not independently provable because this recovery relied on surviving `.pyc` artifacts plus a fresh source implementation of `src/config.py` and `src/presentation/texas_map.py`.
-- Remaining uncertainty: manual browser click-through of the map after this specific fix has not been rechecked in a human-driven session.
+- Remaining uncertainty: manual browser click-through of the map after the 2026-03-07 session-state persistence fix has not been rechecked in a human-driven session.
+- Remaining uncertainty: Windows launcher files that previously existed were not restored in this step; only the macOS `.command` runner is present again.

@@ -54,14 +54,19 @@ class TexasMapTests(unittest.TestCase):
         self.assertIn("marker_size", frame.columns)
         self.assertGreater(frame.loc[0, "marker_size"], 14.0)
 
-    def test_build_texas_location_map_uses_valid_selected_marker_schema(self) -> None:
+    def test_build_texas_location_map_has_outline_and_markers(self) -> None:
         frame = build_location_map_frame(self.metrics, self.battery)
         figure = build_texas_location_map(frame, "HB_PAN")
-        trace = figure.data[0]
 
-        self.assertEqual(trace.selected.marker.color, "#7f4f3f")
-        self.assertEqual(trace.selected.marker.size, 31)
-        self.assertFalse(hasattr(trace.selected.marker, "line"))
+        self.assertEqual(len(figure.data), 2, "Expected 2 traces: outline + markers")
+
+        outline_trace = figure.data[0]
+        self.assertEqual(outline_trace.mode, "lines")
+        self.assertIsNotNone(outline_trace.fill)
+
+        marker_trace = figure.data[1]
+        self.assertEqual(marker_trace.selected.marker.color, "#7f4f3f")
+        self.assertEqual(marker_trace.selected.marker.size, 28)
 
     def test_extract_selected_location_resolves_point_index(self) -> None:
         frame = build_location_map_frame(self.metrics, self.battery)

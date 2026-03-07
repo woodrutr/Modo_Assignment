@@ -225,7 +225,7 @@ SETTINGS = AppSettings(
             anchor_note="Representative CPS anchor for the San Antonio municipal load footprint.",
             lat=29.424122,
             lon=-98.493629,
-            text_position="bottom left",
+            text_position="bottom right",
         ),
         LocationAnchor(
             location="LZ_AEN",
