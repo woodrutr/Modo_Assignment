@@ -1,7 +1,4 @@
-"""Texas location map with state outline and scored settlement point markers.
-
-Presentation-only module. Pure functions: DataFrame in, Plotly Figure out.
-"""
+"""Presentation-only Texas map helpers for the annual screener."""
 
 from __future__ import annotations
 
@@ -10,12 +7,8 @@ from collections.abc import Mapping
 import pandas as pd
 import plotly.graph_objects as go
 
-from src.config import AppSettings, BODY_FONT, DISPLAY_FONT, PALETTE, SCORE_SCALE, SETTINGS
+from src.config import AppSettings, BODY_FONT, DURATION_OPTIONS, PALETTE, SCORE_SCALE, SETTINGS, lens_metric_column
 
-
-# ── Texas state outline (simplified polygon) ─────────────────────────────────
-# Approximate vertices from US Census TIGER/Line, simplified for rendering.
-# Sufficient for a visual anchor — not survey-grade.
 
 _TX_OUTLINE_LON = [
     -103.002, -100.000, -100.000, -99.192, -98.576, -98.088, -97.483,
@@ -49,8 +42,6 @@ _TX_OUTLINE_LAT = [
 ]
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 def _anchor_frame(settings: AppSettings = SETTINGS) -> pd.DataFrame:
     return pd.DataFrame(
         [
@@ -68,39 +59,48 @@ def _anchor_frame(settings: AppSettings = SETTINGS) -> pd.DataFrame:
     )
 
 
+def _scale_marker_sizes(cost_reduction_pct: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(cost_reduction_pct, errors="coerce").fillna(0.0)
+    clipped = numeric.clip(lower=0.0, upper=max(20.0, float(numeric.max())))
+    if clipped.max() <= 0:
+        return pd.Series(16.0, index=cost_reduction_pct.index, dtype=float)
+    return 14.0 + (clipped / clipped.max() * 14.0)
+
+
 def build_location_map_frame(
     metrics: pd.DataFrame,
-    battery: pd.DataFrame,
+    profile_key: str,
+    duration_hours: int,
     settings: AppSettings = SETTINGS,
 ) -> pd.DataFrame:
-    """Merge metrics, battery, and anchor data into a single map-ready frame."""
+    score_column = lens_metric_column(profile_key, duration_hours, "score")
+    rank_column = lens_metric_column(profile_key, duration_hours, "rank")
+    reduction_column = lens_metric_column(profile_key, duration_hours, "annual_cost_reduction_pct")
+    effective_price_column = lens_metric_column(profile_key, duration_hours, "effective_avg_price_usd_per_mwh")
+
     anchor_frame = _anchor_frame(settings)
-    battery_fields = battery.loc[
-        :,
-        ["location", "annual_battery_gross_margin_usd", "pct_positive_value_days"],
-    ]
     map_frame = (
-        metrics.merge(
-            battery_fields,
-            on="location",
-            how="left",
-            validate="one_to_one",
-        )
-        .merge(
-            anchor_frame,
-            on="location",
-            how="left",
-            validate="one_to_one",
-        )
-        .sort_values("rank")
+        metrics.merge(anchor_frame, on="location", how="left", validate="one_to_one")
+        .sort_values([rank_column, "location"], kind="mergesort")
         .reset_index(drop=True)
     )
+    missing = map_frame.loc[map_frame["lat"].isna(), "location"].tolist()
+    if missing:
+        raise ValueError(f"Missing map anchor coordinates for: {missing}")
 
-    missing_locations = map_frame.loc[map_frame["lat"].isna(), "location"].tolist()
-    if missing_locations:
-        raise ValueError(f"Missing map anchor coordinates for: {missing_locations}")
+    map_frame["marker_size"] = _scale_marker_sizes(map_frame[reduction_column])
+    map_frame["map_score"] = map_frame[score_column]
+    map_frame["map_rank"] = map_frame[rank_column]
+    map_frame["map_cost_reduction_pct"] = map_frame[reduction_column]
+    map_frame["map_effective_avg_price"] = map_frame[effective_price_column]
 
-    map_frame["marker_size"] = 14.0 + (map_frame["battery_opportunity_score"] / 5.0)
+    for other_duration in DURATION_OPTIONS:
+        map_frame[f"{other_duration}h_score"] = map_frame[
+            lens_metric_column(profile_key, other_duration, "score")
+        ]
+        map_frame[f"{other_duration}h_cost_reduction_pct"] = map_frame[
+            lens_metric_column(profile_key, other_duration, "annual_cost_reduction_pct")
+        ]
     return map_frame
 
 
@@ -109,13 +109,12 @@ def extract_selected_location(
     map_frame: pd.DataFrame,
     fallback_location: str,
 ) -> str:
-    """Parse a Plotly selection event and return the selected location name."""
     if selection_event is None:
         return fallback_location
 
     selection_payload = getattr(selection_event, "selection", selection_event)
     if isinstance(selection_payload, Mapping) and "selection" in selection_payload:
-        selection_payload = selection_payload.get("selection", {})
+        selection_payload = selection_payload["selection"]
 
     if isinstance(selection_payload, Mapping):
         points = selection_payload.get("points")
@@ -133,55 +132,46 @@ def extract_selected_location(
 
     if point_index is None:
         return fallback_location
-
     if point_index < 0 or point_index >= len(map_frame):
         return fallback_location
-
     return str(map_frame.iloc[int(point_index)]["location"])
 
-
-# ── Figure builder ───────────────────────────────────────────────────────────
 
 def build_texas_location_map(
     map_frame: pd.DataFrame,
     selected_location: str,
+    profile_label: str,
+    duration_label: str,
 ) -> go.Figure:
-    """Build an interactive Texas map with scored settlement point markers."""
-    selected_points = map_frame.index[
-        map_frame["location"].eq(selected_location)
-    ].tolist()
-
+    selected_points = map_frame.index[map_frame["location"].eq(selected_location)].tolist()
     customdata = map_frame[
         [
             "location",
             "anchor_name",
             "anchor_note",
-            "battery_opportunity_score",
-            "avg_daily_spread",
-            "annual_battery_gross_margin_usd",
+            "map_rank",
+            "map_score",
+            "map_cost_reduction_pct",
+            "map_effective_avg_price",
+            "4h_score",
+            "8h_score",
+            "best_fit_lens",
         ]
     ]
 
     figure = go.Figure()
-
-    # ── Texas state outline ──────────────────────────────────────────────
     figure.add_trace(
         go.Scattergeo(
             lat=_TX_OUTLINE_LAT,
             lon=_TX_OUTLINE_LON,
             mode="lines",
-            line={
-                "color": "rgba(53, 90, 102, 0.35)",
-                "width": 1.8,
-            },
+            line={"color": "rgba(53, 90, 102, 0.35)", "width": 1.8},
             fill="toself",
             fillcolor="rgba(240, 236, 228, 0.45)",
             hoverinfo="skip",
             showlegend=False,
         )
     )
-
-    # ── Settlement point markers ─────────────────────────────────────────
     figure.add_trace(
         go.Scattergeo(
             lat=map_frame["lat"],
@@ -189,56 +179,45 @@ def build_texas_location_map(
             text=map_frame["map_label"],
             textposition=map_frame["text_position"],
             mode="markers+text",
-            textfont={
-                "family": BODY_FONT,
-                "size": 10.5,
-                "color": PALETTE["ink"],
-            },
+            textfont={"family": BODY_FONT, "size": 10.5, "color": PALETTE["ink"]},
             customdata=customdata,
             selectedpoints=selected_points,
             marker={
                 "size": map_frame["marker_size"],
-                "color": map_frame["battery_opportunity_score"],
+                "color": map_frame["map_score"],
                 "colorscale": SCORE_SCALE,
                 "cmin": 0,
                 "cmax": 100,
-                "line": {
-                    "color": "rgba(255,255,255,0.85)",
-                    "width": 1.5,
-                },
+                "line": {"color": "rgba(255,255,255,0.85)", "width": 1.5},
+                "opacity": 0.92,
                 "colorbar": {
                     "title": {
-                        "text": "Opportunity<br>Score",
+                        "text": f"{profile_label}<br>{duration_label} score",
                         "font": {"size": 11, "family": BODY_FONT},
                     },
                     "thickness": 12,
-                    "len": 0.4,
+                    "len": 0.42,
                     "y": 0.5,
                     "tickfont": {"size": 10, "family": BODY_FONT},
                     "outlinewidth": 0,
                 },
-                "opacity": 0.92,
             },
-            selected={
-                "marker": {
-                    "color": PALETTE["accent"],
-                    "size": 28,
-                    "opacity": 1.0,
-                }
-            },
+            selected={"marker": {"color": PALETTE["accent"], "size": 28, "opacity": 1.0}},
             unselected={"marker": {"opacity": 0.55}},
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
                 "%{customdata[1]}<br>"
                 "<span style='color:#697274;font-size:11px'>%{customdata[2]}</span><br><br>"
-                "Opportunity score: <b>%{customdata[3]:.1f}</b><br>"
-                "Avg daily spread: <b>$%{customdata[4]:.1f}/MWh</b><br>"
-                "Battery gross margin: <b>$%{customdata[5]:,.0f}/yr</b>"
+                "Active lens rank: <b>#%{customdata[3]}</b><br>"
+                "Active lens score: <b>%{customdata[4]:.1f}</b><br>"
+                "Annual cost reduction: <b>%{customdata[5]:.1f}%</b><br>"
+                "Effective average price: <b>$%{customdata[6]:.2f}/MWh</b><br>"
+                "4h score: <b>%{customdata[7]:.1f}</b> · 8h score: <b>%{customdata[8]:.1f}</b><br>"
+                "Best-fit lens: <b>%{customdata[9]}</b>"
                 "<extra></extra>"
             ),
         )
     )
-
     figure.update_geos(
         projection_type="mercator",
         showland=True,
@@ -256,16 +235,14 @@ def build_texas_location_map(
         lataxis_range=[25.2, 37.0],
         lonaxis_range=[-107.5, -92.0],
     )
-
     figure.update_layout(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        height=520,
+        height=540,
         font={"family": BODY_FONT, "color": PALETTE["ink"]},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         dragmode="select",
     )
-
     return figure
 
 

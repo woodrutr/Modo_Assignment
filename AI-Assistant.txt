@@ -41,3 +41,33 @@ Open / Pending
 - Remaining uncertainty: source parity with the lost precompiled `.py` files is not independently provable because this recovery relied on surviving `.pyc` artifacts plus a fresh source implementation of `src/config.py` and `src/presentation/texas_map.py`.
 - Remaining uncertainty: manual browser click-through of the map after the 2026-03-07 session-state persistence fix has not been rechecked in a human-driven session.
 - Remaining uncertainty: Windows launcher files that previously existed were not restored in this step; only the macOS `.command` runner is present again.
+
+Session Addendum
+
+Timestamped Notes
+- 2026-03-07T11:35:12-05:00 [architecture] Replaced the compiled-shim execution path in `src/data/fetch.py`, `src/data/validate.py`, `src/analytics/battery_model.py`, and `src/analytics/metrics.py` with first-class source implementations. Core business logic now executes directly from source instead of routing through `compiled_backup/*.pyc`.
+- 2026-03-07T11:35:12-05:00 [decision] Preserved the legacy annual metric columns and legacy battery artifacts for parity and reviewer context, but moved the primary dashboard contract to profile-aware and duration-aware annual metrics: `training_24x7`, `inference_weekday_9_17`, `4h`, and `8h`.
+- 2026-03-07T11:35:12-05:00 [correction] The hourly shape artifact required an explicit `duration_hours` dimension even though the earlier draft grain omitted it. Effective shaped active-hour prices depend on duration, so `location x profile x duration_hours x local_month x local_hour` became the canonical grain.
+- 2026-03-07T11:35:12-05:00 [correction] A pandas groupby on the categorical month label initially expanded the hourly shape artifact incorrectly. Setting `observed=True` fixed the shape builder and reduced the artifact to the expected `17,280` rows.
+- 2026-03-07T11:35:12-05:00 [ui] Rebuilt `app.py`, `src/presentation/reviewer_table.py`, and `src/presentation/texas_map.py` around the annual lens contract. The UI now ranks by selected profile and duration, shows 4h and 8h side by side, and uses the Texas map plus analyst-console tabs as the main drilldown surface.
+- 2026-03-07T11:35:12-05:00 [ui] Removed the external Google font import from the dashboard CSS. The final layout now uses local/system font stacks only, avoiding network-dependent styling assets.
+- 2026-03-07T11:35:12-05:00 [decision] Updated `Run_ERCOT_Screener.command` so the launcher validates the presence of the new drilldown artifacts (`ercot_daily_profile_windows_*.parquet` and `ercot_hourly_profile_shape_*.parquet`) before treating the analytics build as complete.
+- 2026-03-07T11:35:12-05:00 [documentation] Rewrote `README.md` and `ARCHITECTURE.md` to reflect the actual annual large-load flexibility screener, the new artifact contract, the load-profile and battery-duration lenses, and the strict hub/load-zone scope boundary.
+- 2026-03-07T11:35:12-05:00 [verification] Final source-backed pipeline verification passed: fetch validated `131,400` rows across `15` locations, metrics rebuilt `15` annual rows plus `5,475` daily spreads, `10,950` daily profile windows, and `17,280` hourly profile-shape rows. Unit tests passed against the new analytics and presentation contracts, `qa_check.py` passed, the launcher check passed, and Streamlit booted headlessly.
+
+Verified State
+- 2026-03-07T11:35:12-05:00 verified commands:
+- `.venv/bin/python -m unittest discover -s tests`
+- `.venv/bin/python -m src.data.fetch --year 2025`
+- `.venv/bin/python -m src.analytics.metrics --year 2025`
+- `.venv/bin/python qa_check.py`
+- `OPEN_BROWSER=0 CHECK_ONLY=1 zsh Run_ERCOT_Screener.command`
+- `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8511`
+- Result: 13 tests passed; cached ERCOT data revalidated cleanly; annual metrics and both new drilldown artifacts rebuilt successfully; QA checks confirmed expected artifact grain and bounded lens scores; the macOS launcher passed its dependency and artifact checks; and the redesigned Streamlit app booted headlessly.
+
+Open / Pending
+- Manual browser click-through of the final V3 dashboard has not been reverified after the load-profile controls, annual analyst console, and map-coloring changes. Headless Streamlit startup is verified; human interaction across the final surfaces is not.
+- Windows double-click launch flow is not currently present in the repo and has not been verified in this V3 implementation pass.
+- `compiled_backup/` and `src/_sourceless.py` remain on disk as recovery artifacts. They are no longer imported by the active core pipeline, but they have not been removed in this pass.
+- 2026-03-07T11:37:18-05:00 [correction] The immediately preceding pending note about a missing Windows launcher is no longer current. Added `Run_ERCOT_Screener.ps1` and `Run_ERCOT_Screener.bat` after the main verification block so the repo again exposes a Windows launch surface aligned to the current artifact contract.
+- 2026-03-07T11:37:18-05:00 [pending] Windows launcher runtime behavior remains unverified because this session only had macOS execution available. The files now exist, but no Windows shell or double-click path was exercised.

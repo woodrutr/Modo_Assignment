@@ -1,126 +1,185 @@
-# ERCOT Battery Flexibility Location Screener
+# ERCOT Annual Large-Load Flexibility Screener
 
-## What Question This Answers
+Which ERCOT hubs and load zones look strongest for large-load deployment when cheap charging windows and battery-backed flexibility can materially reduce annual delivered cost?
 
-**Which ERCOT locations show the strongest conditions for battery-backed large-load flexibility, based on price volatility and low-price availability?**
+This project is an annual screener, not a daily dashboard. It uses historical ERCOT day-ahead settlement point prices to rank locations under two load archetypes and two battery durations:
 
-Large flexible loads — data centers, industrial electrolyzers, bitcoin mining operations — increasingly co-locate with battery energy storage to exploit electricity price patterns. The economic case depends on three local price characteristics: how often prices go negative or near-zero (cheap charging), how often they spike (profitable discharge), and how wide the daily spread is (arbitrage headroom). This tool screens ERCOT settlement points across all three dimensions and produces a ranked composite score.
+- `24/7 Training`
+- `Weekday 9-5 Inference`
+- `4h battery`
+- `8h battery`
 
-## Why It Matters
+The app stays honest about scope. It screens **ERCOT hubs and load zones**, not individual nodes.
 
-ERCOT is the largest competitive wholesale market in the US with no capacity market, meaning energy prices carry the full investment signal. Texas also leads the US in utility-scale battery deployment and large-load interconnection (data centers, hydrogen). For developers, traders, and asset owners evaluating where to site flexible load + storage, the first-order question is: where do the price patterns favor this strategy? This screener answers that question using public data.
+## What The App Does
 
-## What Data Is Used
+- ranks every ERCOT hub/load-zone location for the selected annual lens
+- compares `4h` and `8h` battery flexibility side by side
+- maps locations on a clickable Texas screen with persistent selection
+- shows annual effective delivered cost, annual cost reduction, profitable-day share, and active-hour tail-risk reduction
+- provides drilldown evidence:
+  - month-by-hour price heatmaps
+  - effective shaped-price heatmaps
+  - monthly profitable-day share
+  - daily causal window diagnostics
+  - raw key/value metrics tables for review
 
-Historical Day-Ahead Market (DAM) Settlement Point Prices from the ERCOT Market Information System, covering all trading hubs and load zones (~15 locations) for 12 months. Data is accessed via the `gridstatus` open-source library, which downloads directly from ERCOT's public document archives. No API keys or market participant credentials are required.
+## Core Method
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full data specification, schema, known data wrangling issues, and mitigation strategies.
+### Market surface
 
-## What Assumptions Are Stylized
+- ERCOT Day-Ahead Market settlement point prices
+- calendar year `2025`
+- hourly data
+- ~15 hubs and load zones
 
-This is a screening tool, not a siting model. Key simplifications:
+### Load profiles
 
-- **Hub/zone granularity only.** Real siting decisions require nodal (bus-level) analysis. Hub and zone prices are aggregates that mask local congestion patterns.
-- **No infrastructure proximity.** Real siting considers fiber connectivity, substation capacity, water access, and land availability — none of which are modeled here.
-- **Historical patterns, not forecasts.** The screener describes what happened, not what will happen. Price patterns shift with generation mix changes, transmission buildouts, and load growth.
-- **Battery model is a heuristic.** The optional toy model uses a simple "charge in cheapest 4 hours, discharge in most expensive 4 hours" rule with 85% round-trip efficiency. This is not dispatch optimization — it's a directional estimate.
-- **No ancillary service revenue.** Real battery economics include regulation, reserves, and other grid services. Only energy arbitrage is modeled.
+- `training_24x7`
+  - active all local hours
+  - battery may charge in any earlier same-day hours and discharge later the same day
+- `inference_weekday_9_17`
+  - active during local hours `09:00-16:59` on weekdays only
+  - battery may charge only before the workday and discharge only inside the active window
 
-## What the Tool Is and Is Not
+### Battery convention
 
-**Is:** A transparent, reproducible screener that ranks ERCOT locations by battery-friendly price characteristics using public data and defensible metrics.
+- normalized to `1 MW load`
+- `1 MW battery power per 1 MW load`
+- `4h` and `8h` energy durations
+- `85%` round-trip efficiency
+- same-day charge then discharge only
+- no cross-day state of charge
+- no ancillary services, degradation, or transmission constraints
 
-**Is not:** A production siting model, a price forecast, a dispatch optimizer, or a substitute for nodal-level commercial analysis.
+### Annual score
 
-## How to Run
+Each profile-duration lens scores locations from `0-100` using:
 
-### Prerequisites
+- inverse normalized effective average price
+- normalized annual cost reduction %
+- normalized profitable-day share
+- normalized active-hour `p95` price reduction %
 
-- Python ≥ 3.11 (required — `gridstatus` uses `StrEnum` from the standard library)
-- Internet access for initial ERCOT data download (subsequent runs use cached Parquet files)
+Daily best-spread metrics remain drilldown diagnostics only. They do not drive the primary annual score.
 
-### Setup
+## Single Truth Path
+
+`src/config.py` -> `src/data/fetch.py` / `src/data/validate.py` -> `src/analytics/battery_model.py` / `src/analytics/metrics.py` -> `app.py`
+
+The Streamlit app is presentation-only. Core business metrics are precomputed and read from Parquet artifacts.
+
+## Artifacts
+
+The analytics pipeline writes:
+
+- `data/processed/ercot_dam_spp_utc_2025.parquet`
+- `data/processed/ercot_validation_report_2025.json`
+- `data/metrics/ercot_location_metrics_2025.parquet`
+- `data/metrics/ercot_daily_spreads_2025.parquet`
+- `data/metrics/ercot_battery_value_2025.parquet`
+- `data/metrics/ercot_daily_profile_windows_2025.parquet`
+- `data/metrics/ercot_hourly_profile_shape_2025.parquet`
+
+The expanded annual metrics artifact now includes:
+
+- legacy annual screening columns for parity
+- profile-aware and duration-aware annual cost metrics
+- score and rank columns for all four annual lenses
+- `best_fit_lens` and `best_fit_rank`
+
+## Quickstart
+
+### 1. Install dependencies
 
 ```bash
-# Verify Python version
-python --version  # Must be 3.11+
-
-# Clone and install
-git clone <repo-url>
-cd ercot-battery-screener
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Pull Data
+### 2. Pull and validate ERCOT data
 
 ```bash
-python -m src.data.fetch
+python -m src.data.fetch --year 2025
 ```
 
-This downloads ERCOT DAM SPP data from the public archive and caches it to `data/raw/` as Parquet. Takes ~1-2 minutes on first run. Subsequent runs skip the download if cached data is current.
+### 3. Build annual metrics and drilldown artifacts
 
-### Run the Screener
+```bash
+python -m src.analytics.metrics --year 2025
+```
+
+### 4. Launch the app
 
 ```bash
 streamlit run app.py
 ```
 
-Opens a browser with the interactive dashboard. All timestamps are displayed in US/Central time.
+On macOS you can also double-click [Run_ERCOT_Screener.command](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.command). It bootstraps `.venv`, validates data availability, builds missing metrics artifacts, and launches Streamlit.
 
-On macOS, you can also double-click [Run_ERCOT_Screener.command](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.command). It bootstraps `.venv`, installs dependencies, builds cached artifacts if missing, and launches the app.
+On Windows, the repo also includes [Run_ERCOT_Screener.bat](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.bat) and [Run_ERCOT_Screener.ps1](/Users/timothywoodruff/Desktop/Modo_Assignment/Run_ERCOT_Screener.ps1). Those launchers are source-aligned with the macOS runner, but they were not runtime-verified in this macOS environment.
+
+## Verification Commands
+
+```bash
+python -m unittest discover -s tests
+python -m src.data.fetch --year 2025
+python -m src.analytics.metrics --year 2025
+streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8510
+python qa_check.py
+```
 
 ## Repository Structure
 
-```
-ercot-battery-screener/
-├── README.md                    # This file
-├── ARCHITECTURE.md              # Full technical specification
-├── requirements.txt             # Pinned dependencies
-├── app.py                       # Streamlit dashboard (presentation only)
-├── src/
-│   ├── __init__.py
-│   ├── config.py                # Constants, paths, parameters (single source of truth)
-│   ├── data/
-│   │   ├── __init__.py
-│   │   ├── fetch.py             # ERCOT data acquisition → raw Parquet
-│   │   └── validate.py          # Schema enforcement, missing-interval detection
-│   └── analytics/
-│       ├── __init__.py
-│       ├── metrics.py           # Screener metric computations (pure functions)
-│       └── battery_model.py     # Toy battery heuristic (pure functions)
+```text
+Modo_Assignment/
+├── app.py
+├── README.md
+├── ARCHITECTURE.md
+├── AI-Assistant.txt
+├── Run_ERCOT_Screener.command
+├── Run_ERCOT_Screener.bat
+├── Run_ERCOT_Screener.ps1
+├── qa_check.py
+├── requirements.txt
 ├── data/
-│   ├── raw/                     # Cached ERCOT downloads (Parquet, gitignored)
-│   ├── processed/               # Validated, UTC-normalized data (Parquet, gitignored)
-│   └── metrics/                 # Computed screener results (Parquet, gitignored)
-├── tests/
-│   ├── __init__.py
-│   ├── test_metrics.py          # Unit tests for metric computations
-│   └── test_battery_model.py    # Unit tests for battery heuristic
-└── .gitignore
+│   ├── raw/
+│   ├── processed/
+│   └── metrics/
+├── src/
+│   ├── config.py
+│   ├── data/
+│   │   ├── fetch.py
+│   │   └── validate.py
+│   ├── analytics/
+│   │   ├── battery_model.py
+│   │   └── metrics.py
+│   └── presentation/
+│       ├── reviewer_table.py
+│       └── texas_map.py
+└── tests/
+    ├── fixtures.py
+    ├── test_battery_model.py
+    ├── test_metrics.py
+    ├── test_reviewer_table.py
+    ├── test_texas_map.py
+    └── test_validate.py
 ```
 
-## How AI Accelerated This Workflow
+## Limitations
 
-This project was built using AI tools throughout the process, as Modo's brief expects and encourages. Here is the specific workflow:
+- hub/load-zone screening only; not nodal analysis
+- historical descriptive analysis only; not forecasting
+- no transmission, interconnection, land, fiber, water, or infrastructure overlays
+- stylized battery heuristic only; not an optimization model
 
-### Architecture and Pre-Screening Phase (Claude Opus 4.6)
+## AI Workflow
 
-The high-token-consumption model (Opus 4.6) was used for the upfront architectural work that has the highest leverage on total project quality:
+This repo intentionally documents AI usage because the take-home explicitly values it.
 
-- **Data source investigation.** Opus researched ERCOT MIS data products, identified the specific report IDs (NP4-180-ER for DAM, NP6-785-ER for RTM), verified public accessibility, and confirmed the `gridstatus` library as the acquisition layer. This included inspecting the library source code to confirm output schemas (`Time`, `Interval Start`, `Interval End`, `Location`, `Location Type`, `Market`, `SPP`) and the Python ≥3.11 version constraint (`StrEnum` dependency).
+- architecture and scope control were front-loaded so the project stayed within a defensible 2-4 hour product envelope
+- verification, corrections, and unresolved items are logged in [AI-Assistant.txt](/Users/timothywoodruff/Desktop/Modo_Assignment/AI-Assistant.txt)
+- architectural decisions stayed anchored to the single truth path, with presentation logic kept downstream of precomputed Parquet artifacts
 
-- **Pre-screening data wrangling risks.** Opus identified six specific wrangling issues before any code was written: DST transition handling (23/25-hour days), missing interval detection, year boundary archive availability, Python version constraints, network dependency for initial pull, and data volume estimation. Each issue was documented with a concrete mitigation strategy. This pre-screening is the difference between a 4-hour project and a 12-hour debugging session.
-
-- **Scope right-sizing.** Opus provided critical feedback on what to cut (fuel price correlation analysis, fiber connectivity modeling, individual resource nodes) and what to prioritize (the screener metrics themselves over the battery toy model) to keep the project within the 2–4 hour envelope.
-
-- **Architecture specification.** The full `ARCHITECTURE.md` — pipeline design, metric definitions, separation of concerns, technology stack — was produced in collaboration with Opus to ensure the implementation phase could proceed without architectural ambiguity.
-
-### Implementation Phase
-
-[To be documented after implementation — will include specific AI tools and prompts used for code generation, debugging, and Streamlit layout.]
-
-### Why This Matters
-
-The AI workflow here is intentionally front-loaded on architecture and risk pre-screening. The thesis is that for a time-boxed assignment, the highest-ROI use of a high-capability model is not code generation — it's ensuring you don't build the wrong thing or discover a data wrangling blocker at hour 3 of a 4-hour window. Code generation is fast and correctable; architectural missteps and data surprises are not.
+The ledger is meant to be readable by a human reviewer without requiring terminal logs or chat history.

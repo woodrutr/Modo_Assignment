@@ -42,11 +42,23 @@ print(SETTINGS.metrics_path(SETTINGS.target_year))
 PY
 )"
 
+DAILY_PROFILE_WINDOWS_PATH="$("$PYTHON_BIN" - <<'PY'
+from src.config import SETTINGS
+print(SETTINGS.daily_profile_windows_path(SETTINGS.target_year))
+PY
+)"
+
+HOURLY_PROFILE_SHAPE_PATH="$("$PYTHON_BIN" - <<'PY'
+from src.config import SETTINGS
+print(SETTINGS.hourly_profile_shape_path(SETTINGS.target_year))
+PY
+)"
+
 if [[ ! -f "$PROCESSED_PATH" ]]; then
   "$PYTHON_BIN" -m src.data.fetch
 fi
 
-if [[ ! -f "$METRICS_PATH" ]]; then
+if [[ ! -f "$METRICS_PATH" || ! -f "$DAILY_PROFILE_WINDOWS_PATH" || ! -f "$HOURLY_PROFILE_SHAPE_PATH" ]]; then
   "$PYTHON_BIN" -m src.analytics.metrics --year "$TARGET_YEAR"
 fi
 

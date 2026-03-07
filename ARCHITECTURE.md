@@ -1,266 +1,256 @@
 # Architecture Specification
 
-## Problem Statement
+## Objective
 
-**Question:** Which ERCOT locations show the strongest conditions for battery-backed large-load flexibility, based on price volatility and low-price availability?
+Build a deterministic annual ERCOT screener for large-load deployment with battery flexibility. The product answers:
 
-**Why it matters:** Large flexible loads (e.g., data centers, electrolyzers) co-located with battery storage can exploit price volatility to reduce effective energy costs. Locations with frequent negative or near-zero prices provide cheap charging windows, while high-price spikes create arbitrage revenue. A screener that quantifies these patterns across ERCOT settlement points directly informs siting and commercial structuring decisions.
+> Which ERCOT hubs and load zones show the strongest historical conditions for large-load deployment when a 4-hour or 8-hour battery can shift energy purchases across the day?
 
----
+This implementation remains **hub/load-zone only**. It is explicitly not nodal.
 
-## Data Source
+## Execution Mode
 
-### ERCOT Historical Settlement Point Prices
+- strict annual screening mode
+- deterministic Parquet artifacts
+- presentation-only Streamlit app
+- no compiled-shim dependency in the active core pipeline
 
-**Source:** ERCOT Market Information System (MIS), publicly available, no authentication required.
+## Single Truth Path
 
-**Data Products Used:**
+`src/config.py` -> `src/data/fetch.py` -> `src/data/validate.py` -> `src/analytics/battery_model.py` -> `src/analytics/metrics.py` -> `app.py`
 
-| Product | ERCOT ID | Content | Granularity | Format |
-|---------|----------|---------|-------------|--------|
-| Historical DAM Load Zone and Hub Prices | NP4-180-ER | Day-ahead SPPs for hubs + load zones | Hourly | Excel via ZIP |
-| Historical RTM Load Zone and Hub Prices | NP6-785-ER | Real-time SPPs for hubs + load zones | 15-minute | Excel via ZIP |
+Rules:
 
-**Access Method:** The `gridstatus` Python library (v0.34.0) provides `Ercot.get_dam_spp(year)` and `Ercot.get_rtm_spp(year)` methods that download these archives directly from ERCOT's public document server. No API key or market participant credentials are required.
+- `src/config.py` is the single source of truth for paths, profiles, durations, thresholds, and display constants
+- `src/data/*` may fetch and validate, but may not compute business metrics
+- `src/analytics/*` owns all primary business metrics and drilldown artifact generation
+- `app.py` may filter, format, aggregate for display, and render charts, but may not recompute core domain logic
 
-**Coverage Period:** 12 months. Calendar year 2025 (January 1 – December 31). If 2025 archive is not yet available at run time, the pipeline falls back to 2024.
+## Data Contract
 
-**Primary Market:** Day-Ahead Market (DAM) hourly SPPs. DAM is the primary analysis surface because:
+### Raw input
 
-- Hourly granularity aligns with battery charge/discharge cycle modeling
-- DAM prices reflect forward expectations and are the basis for most commercial contracts
-- Simpler temporal alignment (no 15-min interval aggregation required)
+Source: `gridstatus.Ercot().get_dam_spp(year)`
 
-RTM data is included as a secondary validation layer but is not required for the screener to function.
+Required columns:
 
-### Settlement Points Included
+- `Time`
+- `Interval Start`
+- `Interval End`
+- `Location`
+- `Location Type`
+- `Market`
+- `SPP`
 
-**Trading Hubs:**
+Expected market:
 
-| Name | Description |
-|------|-------------|
-| HB_BUSAVG | Bus average (system-wide) |
-| HB_HOUSTON | Houston hub |
-| HB_NORTH | North hub |
-| HB_SOUTH | South hub |
-| HB_WEST | West hub |
-| HB_PAN | Panhandle hub |
-| HB_HUBAVG | Hub average |
+- `DAY_AHEAD_HOURLY`
 
-**Load Zones:**
+### Processed dataset
 
-| Name | Description |
-|------|-------------|
-| LZ_HOUSTON | Houston load zone |
-| LZ_NORTH | North load zone |
-| LZ_SOUTH | South load zone |
-| LZ_WEST | West load zone |
-| LZ_AEN | AEN load zone |
-| LZ_CPS | CPS load zone |
-| LZ_LCRA | LCRA load zone |
-| LZ_RAYBN | Rayburn load zone |
+Canonical path:
 
-These ~15 locations are the complete set of hubs and load zones returned by `get_dam_spp()`. No individual resource nodes are included (that would require different data products and add complexity without proportional analytical value for a screener).
+- `data/processed/ercot_dam_spp_utc_{year}.parquet`
 
----
+Schema:
 
-## Output Schema from gridstatus
+- `timestamp_utc`
+- `interval_start_utc`
+- `interval_end_utc`
+- `market_date`
+- `location`
+- `location_type`
+- `market`
+- `spp`
 
-The `get_dam_spp(year)` method returns a pandas DataFrame with these columns:
+Integrity rules:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `Time` | datetime64[ns, tz] | Timestamp (timezone-aware, US/Central) |
-| `Interval Start` | datetime64[ns, tz] | Start of delivery interval |
-| `Interval End` | datetime64[ns, tz] | End of delivery interval |
-| `Location` | str | Settlement point name (e.g., `HB_HOUSTON`, `LZ_NORTH`) |
-| `Location Type` | str | One of: `Trading Hub`, `Load Zone` |
-| `Market` | str | `DAY_AHEAD_HOURLY` |
-| `SPP` | float64 | Settlement point price, $/MWh |
+- all backend timestamps are timezone-aware UTC
+- interval width must equal `60` minutes
+- missing or duplicate intervals are hard failures
+- all locations must share the same hourly interval index
 
----
+Validation report path:
 
-## Known Data Wrangling Issues
+- `data/processed/ercot_validation_report_{year}.json`
 
-### 1. DST Transitions (Critical)
+## Analytical Lenses
 
-ERCOT operates on Central Prevailing Time (CPT). DST creates:
+### Load profiles
 
-- **Spring forward (March):** 23-hour day. The 2:00 AM hour is skipped.
-- **Fall back (November):** 25-hour day. The 2:00 AM hour is duplicated.
+`training_24x7`
 
-**Mitigation:** `gridstatus` handles DST internally via timezone-aware timestamps. After ingestion, all timestamps are converted to UTC for storage and computation. Local time is derived only at the Streamlit presentation layer.
+- active every local hour
+- charge may occur in any earlier same-day hours
+- discharge may occur in any later same-day hours
 
-### 2. Missing Intervals
+`inference_weekday_9_17`
 
-ERCOT archives occasionally contain missing rows for specific hours/intervals.
+- active only on weekdays during local hours `09:00-16:59`
+- charge may occur only before the active window on the same weekday
+- discharge must occur inside the active window
+- weekends have zero active load and zero battery value
 
-**Mitigation:** After ingestion, validate expected row counts per location per day (24 for DAM, 96 for RTM). Log missing intervals. Metrics are computed on available data with explicit `NaN` handling — no forward-filling or interpolation.
+### Battery durations
 
-### 3. Year Boundary for Archives
+- `4h`
+- `8h`
 
-`get_dam_spp(year)` returns a full calendar year. If the current year's archive is not yet published, the call will fail.
+### Economic normalization
 
-**Mitigation:** The data pull script attempts the target year first, catches the exception, and falls back to the prior year. The actual date range used is recorded in pipeline metadata.
+- baseline load: `1.0 MW`
+- battery power: `1.0 MW per MW of load`
+- battery energy: `duration_hours MWh per MW of load`
+- round-trip efficiency: `0.85`
+- same-day charge then discharge only
+- if the best causal spread is non-positive, the battery remains idle for that day
 
-### 4. Python Version Constraint
+## Artifact Contract
 
-`gridstatus` v0.34.0 requires Python ≥3.11 (uses `StrEnum` from the standard library, introduced in 3.11).
+### Expanded annual metrics
 
-**Mitigation:** `requirements.txt` and `README.md` specify Python ≥3.11 explicitly. The setup instructions include version verification.
+Path:
 
-### 5. Network Dependency
+- `data/metrics/ercot_location_metrics_{year}.parquet`
 
-`gridstatus` downloads ZIP/Excel files from ERCOT's document server at runtime. This requires internet access and is subject to ERCOT server availability.
+Contains:
 
-**Mitigation:** The data pipeline caches raw downloads to `data/raw/` as Parquet files. If cached data exists and is current, the pipeline skips the download. This also enables offline development after the initial pull.
-
-### 6. Data Volume
-
-One year of DAM data for ~15 locations × 8,760 hours ≈ 131,400 rows. This fits comfortably in memory. No out-of-core processing needed.
-
----
-
-## Computed Metrics
-
-For each settlement point location, computed over the analysis period:
-
-| Metric | Formula | Units | Purpose |
-|--------|---------|-------|---------|
-| `avg_price` | `mean(SPP)` | $/MWh | Baseline cost level |
-| `std_price` | `std(SPP)` | $/MWh | Overall volatility |
-| `pct_negative` | `count(SPP < 0) / count(SPP)` | % | Frequency of negative pricing (charging opportunity) |
-| `pct_below_20` | `count(SPP < 20) / count(SPP)` | % | Frequency of low-cost hours |
-| `pct_above_100` | `count(SPP > 100) / count(SPP)` | % | Frequency of price spikes (discharge opportunity) |
-| `avg_daily_spread` | `mean(daily_max - daily_min)` | $/MWh | Average intra-day price range |
-| `battery_opportunity_score` | Composite (see below) | 0–100 | Screener ranking metric |
-
-### Battery Opportunity Score
-
-A normalized composite ranking that combines:
-
-```
-score = w1 * norm(pct_negative)
-      + w2 * norm(pct_below_20)
-      + w3 * norm(avg_daily_spread)
-      + w4 * norm(pct_above_100)
-```
-
-Where `norm()` is min-max normalization across all locations and `w1–w4` are configurable weights (default equal). The score ranks locations on a 0–100 scale. This is explicitly a relative ranking tool, not an absolute economic valuation.
-
----
-
-## Optional: Battery Toy Model
-
-### Stylized Assumptions
-
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Load profile | Flat 100 MW, 24/7 | Stylized data-center-like baseload |
-| Battery capacity | 100 MWh (1-hour duration at load rating) | Representative grid-scale Li-ion |
-| Battery power | 100 MW charge / 100 MW discharge | Symmetric |
-| Round-trip efficiency | 85% | Conservative Li-ion assumption |
-| Charge window | 4 lowest-price hours per day | Heuristic, not optimized |
-| Discharge window | 4 highest-price hours per day | Heuristic, not optimized |
-| Cycle constraint | 1 full cycle per day | Simplification |
-
-### Logic (Heuristic, Not Optimization)
-
-For each day at each location:
-
-1. Sort 24 hourly prices ascending
-2. Charge hours = bottom 4 hours. Charging cost = `sum(price[0:4]) * 100 MWh / 0.85`
-3. Discharge hours = top 4 hours. Avoided cost = `sum(price[-4:]) * 100 MWh`
-4. Net benefit per day = `avoided_cost - charging_cost`
-5. Annual avoided cost = `sum(daily_net_benefit)`
-
-This is intentionally transparent and not a production-grade dispatch optimizer. It translates the price signal into a dollar figure that contextualizes the screener metrics.
-
----
-
-## Pipeline Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Data Layer                          │
-│                                                         │
-│  ERCOT MIS ──► gridstatus ──► raw DataFrame             │
-│                                  │                      │
-│                                  ▼                      │
-│                          data/raw/*.parquet              │
-│                          (cached, immutable)             │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                  Transform Layer                        │
-│                                                         │
-│  1. Validate schema + row counts                        │
-│  2. Convert timestamps to UTC                           │
-│  3. Tag location metadata (hub vs zone)                 │
-│  4. Persist to data/processed/*.parquet                 │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                  Analytics Layer                        │
-│                                                         │
-│  1. Compute per-location summary metrics                │
-│  2. Compute battery opportunity score                   │
-│  3. (Optional) Run battery toy model                    │
-│  4. Persist to data/metrics/*.parquet                   │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                 Presentation Layer                      │
-│                                                         │
-│  Streamlit app (app.py)                                 │
-│  - Screener table with sortable columns                 │
-│  - Price distribution charts per location               │
-│  - Daily spread heatmap                                 │
-│  - Battery model results (if computed)                  │
-│  - All timestamps displayed in US/Central               │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Separation of Concerns
-
-- **`src/data/fetch.py`** — Data acquisition only. Downloads from ERCOT, writes raw Parquet. No business logic.
-- **`src/data/validate.py`** — Schema enforcement, missing-interval detection, dtype coercion. Returns validated DataFrame or raises.
-- **`src/analytics/metrics.py`** — All metric computations. Pure functions: DataFrame in, DataFrame out. No I/O.
-- **`src/analytics/battery_model.py`** — Toy battery heuristic. Pure functions. No I/O.
-- **`src/config.py`** — All constants: file paths (via pathlib), metric parameters, model assumptions. Single source of truth.
-- **`app.py`** — Streamlit presentation only. Reads from `data/metrics/`, renders UI. No computation.
-
----
-
-## Technology Stack
-
-| Component | Choice | Version Constraint |
-|-----------|--------|--------------------|
-| Language | Python | ≥ 3.11 |
-| Data acquisition | gridstatus | 0.34.0 |
-| Data manipulation | pandas | ≥ 2.0 |
-| Serialization | pyarrow | (for Parquet I/O) |
-| Visualization | plotly | (interactive charts in Streamlit) |
-| Presentation | streamlit | ≥ 1.30 |
-| Configuration | pydantic | (typed settings validation) |
-
----
-
-## What This Tool Is and Is Not
-
-**Is:**
-
-- A screening tool that ranks ERCOT locations by battery-friendly price patterns
-- Built on publicly available, reproducible data
-- Transparent in its assumptions and methodology
-- Designed to run on any machine with Python ≥3.11 and internet access
-
-**Is not:**
-
-- A production siting model (ignores transmission constraints, interconnection queues, land costs, fiber/network proximity, water availability)
-- A battery dispatch optimizer (uses heuristic, not mathematical optimization)
-- A price forecast (descriptive analysis of historical patterns only)
-- A substitute for nodal-level analysis (uses hub/zone aggregates, not individual buses)
+- legacy annual screening metrics for parity
+- annual inference day-vs-overnight context
+- legacy battery-value context
+- profile-duration annual metrics for all four lenses
+- `best_fit_lens`
+- `best_fit_rank`
+
+Per lens naming pattern:
+
+- `{profile}_{duration}h_baseline_annual_cost_usd_per_mw_year`
+- `{profile}_{duration}h_effective_annual_cost_usd_per_mw_year`
+- `{profile}_{duration}h_effective_avg_price_usd_per_mwh`
+- `{profile}_{duration}h_annual_cost_reduction_usd_per_mw_year`
+- `{profile}_{duration}h_annual_cost_reduction_pct`
+- `{profile}_{duration}h_profitable_day_share`
+- `{profile}_{duration}h_count_profitable_days`
+- `{profile}_{duration}h_p50_daily_best_spread_usd_per_mwh`
+- `{profile}_{duration}h_p90_daily_best_spread_usd_per_mwh`
+- `{profile}_{duration}h_p95_active_hour_price_usd_per_mwh`
+- `{profile}_{duration}h_p95_active_hour_effective_price_usd_per_mwh`
+- `{profile}_{duration}h_p95_active_hour_reduction_pct`
+- `{profile}_{duration}h_score`
+- `{profile}_{duration}h_rank`
+
+### Daily profile windows
+
+Path:
+
+- `data/metrics/ercot_daily_profile_windows_{year}.parquet`
+
+Grain:
+
+- `location x profile x local_date`
+
+Contains:
+
+- baseline daily cost
+- active-load MWh
+- `4h` causal charge/discharge window diagnostics
+- `8h` causal charge/discharge window diagnostics
+- profitable flags and effective daily cost outputs
+
+### Hourly profile shape
+
+Path:
+
+- `data/metrics/ercot_hourly_profile_shape_{year}.parquet`
+
+Grain:
+
+- `location x profile x duration_hours x local_month x local_hour`
+
+Contains:
+
+- average market price
+- average effective shaped active-hour price
+- observation counts
+- active-hour flag
+- selected charge/discharge observation counts
+
+### Legacy context artifacts
+
+Still generated for parity and reviewer transparency:
+
+- `data/metrics/ercot_daily_spreads_{year}.parquet`
+- `data/metrics/ercot_battery_value_{year}.parquet`
+
+These are no longer primary ranking inputs in the dashboard.
+
+## Scoring Logic
+
+Each profile-duration lens is normalized across locations within that exact lens only.
+
+Score weights:
+
+- `40%` inverse normalized `effective_avg_price_usd_per_mwh`
+- `25%` normalized `annual_cost_reduction_pct`
+- `20%` normalized `profitable_day_share`
+- `15%` normalized `p95_active_hour_reduction_pct`
+
+Daily best-spread metrics remain diagnostic only and are excluded from the primary score to avoid double-counting arbitrage.
+
+`best_fit_lens` selection:
+
+- choose the lens with the lowest `rank`
+- tie-break by highest `annual_cost_reduction_pct`
+- final deterministic tie-break by score, then lens label
+
+## UI Contract
+
+Primary controls:
+
+- `Load profile`
+- `Primary battery duration`
+
+Session state:
+
+- `selected_profile`
+- `selected_duration`
+- `selected_location`
+
+Top-level layout:
+
+1. annual lens controls and hero metrics
+2. clickable Texas location map with persistent selection
+3. narrow reviewer table showing 4h vs 8h side by side
+4. analyst console tabs
+
+Analyst console tabs:
+
+1. `Annual Summary`
+2. `Temporal Shape`
+3. `4h Flexibility`
+4. `8h Flexibility`
+
+Raw diagnostics must render as key/value tables, not JSON blobs.
+
+## Determinism and Verification
+
+Deterministic requirements:
+
+- identical cached raw input produces identical processed schema and annual rank order
+- current 2025 legacy rank order is enforced as a guardrail during metrics generation
+- launchers and the app read artifact paths from `src.config.SETTINGS`
+
+Expected verification commands:
+
+- `python -m unittest discover -s tests`
+- `python -m src.data.fetch --year 2025`
+- `python -m src.analytics.metrics --year 2025`
+- `streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8510`
+
+## Non-Goals
+
+- nodal siting
+- congestion decomposition
+- production dispatch optimization
+- transmission, interconnection, land, fiber, or water overlays
+- forward price forecasting

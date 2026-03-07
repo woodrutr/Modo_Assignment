@@ -1,9 +1,4 @@
-"""ERCOT Battery Flexibility Location Screener — Streamlit Dashboard.
-
-Presentation layer only. Reads pre-computed Parquet artifacts from data/metrics/
-and renders an interactive dashboard. No business logic or data transformation
-lives in this file.
-"""
+"""Annual ERCOT large-load flexibility screener."""
 
 from __future__ import annotations
 
@@ -14,11 +9,16 @@ import streamlit as st
 from src.config import (
     BODY_FONT,
     DISPLAY_FONT,
+    DURATION_OPTIONS,
+    EFFECTIVE_PRICE_SCALE,
     HEATMAP_SCALE,
     MONTH_ORDER,
     PALETTE,
-    SCORE_SCALE,
+    PROFILE_LABELS,
+    PROFILE_ORDER,
     SETTINGS,
+    lens_label,
+    lens_metric_column,
 )
 from src.presentation.reviewer_table import (
     build_location_narrative,
@@ -33,167 +33,136 @@ from src.presentation.texas_map import (
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Page config
-# ─────────────────────────────────────────────────────────────────────────────
-
 st.set_page_config(
-    page_title="ERCOT Battery Flexibility Screener",
+    page_title="ERCOT Large-Load Flexibility Screener",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Global CSS — Apple-inspired visual system
-# ─────────────────────────────────────────────────────────────────────────────
 
-st.markdown(f"""
+st.markdown(
+    f"""
 <style>
-    /* ── Base ──────────────────────────────────────────────────────── */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
     .stApp {{
-        background-color: {PALETTE["paper"]};
-        font-family: 'Inter', {BODY_FONT};
-    }}
-
-    /* Remove default Streamlit padding bloat */
-    .block-container {{
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        max-width: 1200px;
-    }}
-
-    /* ── Typography ───────────────────────────────────────────────── */
-    h1, h2, h3, h4, h5, h6 {{
-        font-family: 'Inter', {DISPLAY_FONT};
+        background:
+            radial-gradient(circle at top left, rgba(255,255,255,0.78), rgba(255,255,255,0) 28%),
+            linear-gradient(180deg, #f6f2eb 0%, #efe8dd 48%, #ece5da 100%);
         color: {PALETTE["ink"]};
-        letter-spacing: -0.01em;
+        font-family: {BODY_FONT};
+    }}
+
+    .block-container {{
+        max-width: 1240px;
+        padding-top: 1.6rem;
+        padding-bottom: 2.5rem;
+    }}
+
+    h1, h2, h3, h4 {{
+        color: {PALETTE["ink"]};
+        font-family: {DISPLAY_FONT};
+        letter-spacing: -0.02em;
     }}
 
     h1 {{
-        font-size: 1.75rem !important;
-        font-weight: 600 !important;
-        margin-bottom: 0.25rem !important;
+        font-size: 2.1rem !important;
+        font-weight: 650 !important;
+        margin-bottom: 0.2rem !important;
     }}
 
     h3 {{
-        font-size: 1.1rem !important;
+        font-size: 1rem !important;
         font-weight: 600 !important;
         color: {PALETTE["sea"]} !important;
-        margin-top: 2.5rem !important;
-        margin-bottom: 0.75rem !important;
+        margin-top: 1.6rem !important;
+        margin-bottom: 0.7rem !important;
     }}
 
-    p, li, span, div {{
-        color: {PALETTE["ink"]};
-    }}
-
-    /* ── Metric cards ─────────────────────────────────────────────── */
     [data-testid="stMetric"] {{
-        background: {PALETTE["panel_strong"]};
+        background: rgba(255, 252, 247, 0.82);
         border: 1px solid {PALETTE["line"]};
-        border-radius: 12px;
-        padding: 16px 20px;
+        border-radius: 18px;
+        padding: 15px 18px;
+        box-shadow: 0 10px 24px rgba(31, 38, 40, 0.05);
     }}
 
     [data-testid="stMetricLabel"] {{
-        font-size: 0.72rem !important;
-        font-weight: 500 !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.05em !important;
+        letter-spacing: 0.08em !important;
         color: {PALETTE["muted"]} !important;
+        font-size: 0.70rem !important;
+        font-weight: 600 !important;
     }}
 
     [data-testid="stMetricValue"] {{
-        font-size: 1.55rem !important;
-        font-weight: 600 !important;
         color: {PALETTE["ink"]} !important;
+        font-size: 1.55rem !important;
+        font-weight: 620 !important;
     }}
 
-    /* ── Tables ───────────────────────────────────────────────────── */
-    .stDataFrame {{
-        border-radius: 10px;
+    [data-testid="stDataFrame"] {{
+        border-radius: 16px;
         overflow: hidden;
+        border: 1px solid {PALETTE["line"]};
+        background: rgba(255, 252, 247, 0.76);
     }}
 
     [data-testid="stDataFrame"] th {{
-        background-color: {PALETTE["paper_alt"]} !important;
+        background-color: rgba(233, 226, 215, 0.92) !important;
+        color: {PALETTE["muted"]} !important;
         font-size: 0.72rem !important;
-        font-weight: 600 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.04em !important;
-        color: {PALETTE["muted"]} !important;
     }}
 
-    /* ── Tabs ─────────────────────────────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {{
-        gap: 0px;
+        gap: 0.25rem;
         border-bottom: 1px solid {PALETTE["line_strong"]};
     }}
 
     .stTabs [data-baseweb="tab"] {{
-        font-size: 0.82rem;
-        font-weight: 500;
+        border-radius: 999px 999px 0 0;
+        padding: 0.55rem 1rem;
         color: {PALETTE["muted"]};
-        padding: 8px 20px;
-        border-bottom: 2px solid transparent;
     }}
 
     .stTabs [aria-selected="true"] {{
         color: {PALETTE["sea"]} !important;
-        border-bottom-color: {PALETTE["sea"]} !important;
         font-weight: 600;
-    }}
-
-    /* ── Expanders ────────────────────────────────────────────────── */
-    .streamlit-expanderHeader {{
-        font-size: 0.82rem !important;
-        font-weight: 500 !important;
-        color: {PALETTE["muted"]} !important;
-    }}
-
-    /* ── Dividers ─────────────────────────────────────────────────── */
-    hr {{
-        border: none;
-        border-top: 1px solid {PALETTE["line"]};
-        margin: 2rem 0;
-    }}
-
-    /* ── Sidebar ──────────────────────────────────────────────────── */
-    [data-testid="stSidebar"] {{
-        background-color: {PALETTE["paper_alt"]};
-    }}
-
-    /* ── Caption styling ──────────────────────────────────────────── */
-    .source-note {{
-        font-size: 0.7rem;
-        color: {PALETTE["muted"]};
-        line-height: 1.5;
-        margin-top: 0.25rem;
+        background: rgba(255, 252, 247, 0.66);
     }}
 
     .hero-subtitle {{
-        font-size: 0.92rem;
         color: {PALETTE["muted"]};
-        margin-top: -0.5rem;
-        margin-bottom: 1.5rem;
-        line-height: 1.6;
+        max-width: 860px;
+        line-height: 1.55;
+        margin-top: -0.25rem;
+        margin-bottom: 1.1rem;
     }}
 
-    /* ── Plotly chart containers ──────────────────────────────────── */
+    .section-card {{
+        background: rgba(255, 252, 247, 0.72);
+        border: 1px solid {PALETTE["line"]};
+        border-radius: 20px;
+        padding: 1rem 1.1rem 1.05rem 1.1rem;
+        box-shadow: 0 12px 28px rgba(31, 38, 40, 0.05);
+    }}
+
+    .section-caption {{
+        color: {PALETTE["muted"]};
+        font-size: 0.8rem;
+        line-height: 1.45;
+    }}
+
     [data-testid="stPlotlyChart"] {{
-        border-radius: 12px;
+        border-radius: 18px;
         overflow: hidden;
     }}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Load data
-# ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data
 def load_metrics() -> pd.DataFrame:
@@ -201,437 +170,570 @@ def load_metrics() -> pd.DataFrame:
 
 
 @st.cache_data
-def load_battery() -> pd.DataFrame:
-    return pd.read_parquet(SETTINGS.battery_value_path(SETTINGS.target_year))
+def load_daily_profile_windows() -> pd.DataFrame:
+    return pd.read_parquet(SETTINGS.daily_profile_windows_path(SETTINGS.target_year))
 
 
 @st.cache_data
-def load_spreads() -> pd.DataFrame:
-    return pd.read_parquet(SETTINGS.daily_spread_path(SETTINGS.target_year))
-
-
-@st.cache_data
-def load_prices() -> pd.DataFrame:
-    return pd.read_parquet(SETTINGS.processed_dam_path(SETTINGS.target_year))
+def load_hourly_profile_shape() -> pd.DataFrame:
+    return pd.read_parquet(SETTINGS.hourly_profile_shape_path(SETTINGS.target_year))
 
 
 metrics = load_metrics()
-battery = load_battery()
-spreads = load_spreads()
-prices = load_prices()
+daily_windows = load_daily_profile_windows()
+hourly_shape = load_hourly_profile_shape()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Map frame (shared state)
-# ─────────────────────────────────────────────────────────────────────────────
-
-map_frame = build_location_map_frame(metrics, battery)
-top_location = str(map_frame.iloc[0]["location"])
-
-valid_locations = map_frame["location"].tolist()
-if (
-    "selected_location" not in st.session_state
-    or st.session_state["selected_location"] not in valid_locations
-):
-    st.session_state["selected_location"] = top_location
+def _lens_column(profile_key: str, duration_hours: int, metric_name: str) -> str:
+    return lens_metric_column(profile_key, duration_hours, metric_name)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# § 1 — Hero header
-# ─────────────────────────────────────────────────────────────────────────────
+def _init_session_state() -> None:
+    if "selected_profile" not in st.session_state:
+        st.session_state["selected_profile"] = PROFILE_ORDER[0]
+    if "selected_duration" not in st.session_state:
+        st.session_state["selected_duration"] = DURATION_OPTIONS[0]
 
-st.markdown("# ERCOT Battery Flexibility Screener")
-st.markdown(
-    '<p class="hero-subtitle">'
-    "Which ERCOT locations show the strongest conditions for "
-    "battery-backed large-load flexibility, based on price volatility "
-    "and low-price availability?"
-    "</p>",
-    unsafe_allow_html=True,
-)
+    top_location = (
+        metrics.sort_values(
+            _lens_column(st.session_state["selected_profile"], st.session_state["selected_duration"], "rank"),
+            kind="mergesort",
+        )
+        .iloc[0]["location"]
+    )
+    valid_locations = metrics["location"].tolist()
+    if (
+        "selected_location" not in st.session_state
+        or st.session_state["selected_location"] not in valid_locations
+    ):
+        st.session_state["selected_location"] = str(top_location)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# § 2 — Summary metrics (top-level KPIs)
-# ─────────────────────────────────────────────────────────────────────────────
+def _active_metrics_frame(profile_key: str, duration_hours: int) -> pd.DataFrame:
+    rank_column = _lens_column(profile_key, duration_hours, "rank")
+    return metrics.sort_values([rank_column, "location"], kind="mergesort").reset_index(drop=True)
 
-top_row = metrics.iloc[0]
-best_spread_row = metrics.loc[metrics["avg_daily_spread"].idxmax()]
-best_battery_row = battery.sort_values("annual_battery_gross_margin_usd", ascending=False).iloc[0]
-best_neg_row = metrics.loc[metrics["pct_negative"].idxmax()]
 
-col1, col2, col3, col4 = st.columns(4)
+def _render_controls() -> tuple[str, int]:
+    controls_left, controls_right = st.columns([2.2, 1.2], gap="large")
+    with controls_left:
+        st.markdown("### Annual Screener")
+        st.markdown(
+            '<p class="hero-subtitle">Screen ERCOT hubs and load zones for annual large-load deployment. '
+            'Switch between 24/7 training and weekday daytime inference, then compare how 4-hour and 8-hour '
+            'battery flexibility changes delivered cost, profitable day frequency, and active-hour risk.</p>',
+            unsafe_allow_html=True,
+        )
+    with controls_right:
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        selected_profile = st.radio(
+            "Load profile",
+            options=list(PROFILE_ORDER),
+            format_func=lambda key: PROFILE_LABELS[key],
+            horizontal=True,
+            key="selected_profile",
+        )
+        selected_duration = st.radio(
+            "Primary battery duration",
+            options=list(DURATION_OPTIONS),
+            format_func=lambda duration: f"{duration}h",
+            horizontal=True,
+            key="selected_duration",
+        )
+        st.markdown(
+            '<p class="section-caption">The primary lens controls ranking, map coloring, and headline KPIs. '
+            'The drilldown still shows both 4h and 8h for the selected load profile.</p>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+    return selected_profile, int(selected_duration)
 
-with col1:
-    st.metric(
-        label="Top Location",
-        value=str(top_row["location"]),
-        delta=f"Score {top_row['battery_opportunity_score']:.0f}/100",
+
+def _render_hero_cards(active_frame: pd.DataFrame, profile_key: str, duration_hours: int) -> None:
+    score_column = _lens_column(profile_key, duration_hours, "score")
+    price_column = _lens_column(profile_key, duration_hours, "effective_avg_price_usd_per_mwh")
+    reduction_column = _lens_column(profile_key, duration_hours, "annual_cost_reduction_pct")
+    p95_column = _lens_column(profile_key, duration_hours, "p95_active_hour_reduction_pct")
+
+    leader = active_frame.iloc[0]
+    lowest_price = active_frame.loc[active_frame[price_column].idxmin()]
+    highest_reduction = active_frame.loc[active_frame[reduction_column].idxmax()]
+    strongest_tail = active_frame.loc[active_frame[p95_column].idxmax()]
+
+    col1, col2, col3, col4 = st.columns(4, gap="medium")
+    with col1:
+        st.metric("Lens leader", str(leader["location"]), delta=f"Score {leader[score_column]:.1f}")
+    with col2:
+        st.metric("Best effective average price", f"${lowest_price[price_column]:.2f}/MWh", delta=str(lowest_price["location"]))
+    with col3:
+        st.metric("Largest annual cost reduction", f"{highest_reduction[reduction_column]:.1f}%", delta=str(highest_reduction["location"]))
+    with col4:
+        st.metric("Strongest active-hour tail-risk reduction", f"{strongest_tail[p95_column]:.1f}%", delta=str(strongest_tail["location"]))
+
+    observations = int(metrics.iloc[0]["observations"])
+    st.caption(
+        f"ERCOT DAM {SETTINGS.target_year} · {len(metrics)} locations · {observations:,} hourly observations per location · "
+        f"Primary lens: {lens_label(profile_key, duration_hours)}"
     )
 
-with col2:
-    st.metric(
-        label="Best Daily Spread",
-        value=f"${best_spread_row['avg_daily_spread']:.1f}/MWh",
-        delta=f"{best_spread_row['location']}",
-    )
 
-with col3:
-    st.metric(
-        label="Top Battery Margin",
-        value=f"${best_battery_row['annual_battery_gross_margin_usd']:,.0f}/yr",
-        delta=f"{best_battery_row['location']}",
-    )
-
-with col4:
-    st.metric(
-        label="Most Negative Hours",
-        value=f"{best_neg_row['pct_negative']:.1f}%",
-        delta=f"{best_neg_row['location']}",
-    )
-
-st.markdown(
-    '<p class="source-note">'
-    f"Data: ERCOT Day-Ahead Market settlement point prices · {SETTINGS.target_year} · "
-    f"{int(metrics.iloc[0]['observations']):,} hourly observations per location · "
-    f"{len(metrics)} locations"
-    "</p>",
-    unsafe_allow_html=True,
-)
-
-st.markdown("---")
+def _selected_row(location: str) -> pd.Series:
+    return metrics.loc[metrics["location"].eq(location)].iloc[0]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# § 3 — Map + location focus panel
-# ─────────────────────────────────────────────────────────────────────────────
+def _render_map_section(profile_key: str, duration_hours: int) -> None:
+    st.markdown("### Geographic Screen")
+    map_frame = build_location_map_frame(metrics, profile_key, duration_hours)
+    valid_locations = map_frame["location"].tolist()
+    if st.session_state["selected_location"] not in valid_locations:
+        st.session_state["selected_location"] = str(map_frame.iloc[0]["location"])
 
-st.markdown("### Geography")
+    map_col, detail_col = st.columns([2.8, 1.7], gap="large")
 
-map_col, detail_col = st.columns([3, 2], gap="large")
-
-with map_col:
-    st.caption("Click a marker to inspect a location.")
-    current_location = st.session_state["selected_location"]
-    selection = st.plotly_chart(
-        build_texas_location_map(map_frame, current_location),
-        use_container_width=True,
-        key="texas_map",
-        on_select="rerun",
-        selection_mode="points",
-    )
-
-clicked_location = extract_selected_location(
-    selection,
-    map_frame,
-    st.session_state["selected_location"],
-)
-if clicked_location != st.session_state["selected_location"]:
-    st.session_state["selected_location"] = clicked_location
-    st.rerun()
-
-selected_location = st.session_state["selected_location"]
-sel_metrics = metrics.loc[metrics["location"] == selected_location].iloc[0]
-sel_battery = battery.loc[battery["location"] == selected_location]
-sel_battery_row = sel_battery.iloc[0] if len(sel_battery) > 0 else None
-
-with detail_col:
-    st.markdown(f"#### {selected_location}")
-    st.markdown(
-        build_location_narrative(sel_metrics, sel_battery_row),
-        unsafe_allow_html=True,
-    )
-
-    with st.expander("Raw metric values"):
-        raw_metric_table = build_selected_metric_table(sel_metrics, sel_battery_row)
-        st.dataframe(
-            raw_metric_table,
+    with map_col:
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        st.caption("Marker color reflects annual lens score. Marker size reflects annual cost reduction %. Click a location to persist selection.")
+        map_event = st.plotly_chart(
+            build_texas_location_map(
+                map_frame=map_frame,
+                selected_location=st.session_state["selected_location"],
+                profile_label=PROFILE_LABELS[profile_key],
+                duration_label=f"{duration_hours}h",
+            ),
             use_container_width=True,
-            hide_index=True,
-            height=min(38 * len(raw_metric_table) + 38, 560),
+            key="texas_map",
+            on_select="rerun",
+            selection_mode="points",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    clicked_location = extract_selected_location(
+        selection_event=map_event,
+        map_frame=map_frame,
+        fallback_location=st.session_state["selected_location"],
+    )
+    if clicked_location != st.session_state["selected_location"]:
+        st.session_state["selected_location"] = clicked_location
+        st.rerun()
+
+    selected = _selected_row(st.session_state["selected_location"])
+    with detail_col:
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        st.markdown(f"#### {selected['location']}")
+        st.markdown(build_location_narrative(selected, profile_key, duration_hours))
+        card_left, card_right = st.columns(2)
+        with card_left:
+            st.metric(
+                "4h effective price",
+                f"${selected[_lens_column(profile_key, 4, 'effective_avg_price_usd_per_mwh')]:.2f}/MWh",
+                delta=f"{selected[_lens_column(profile_key, 4, 'annual_cost_reduction_pct')]:.1f}% reduction",
+            )
+        with card_right:
+            st.metric(
+                "8h effective price",
+                f"${selected[_lens_column(profile_key, 8, 'effective_avg_price_usd_per_mwh')]:.2f}/MWh",
+                delta=f"{selected[_lens_column(profile_key, 8, 'annual_cost_reduction_pct')]:.1f}% reduction",
+            )
+        st.metric("Best-fit lens", str(selected["best_fit_lens"]), delta=f"Rank {int(selected['best_fit_rank'])}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_ranking_table(profile_key: str) -> None:
+    st.markdown("### Ranking Table")
+    reviewer_table = build_reviewer_table(metrics, profile_key)
+    formatted = format_reviewer_table(reviewer_table)
+    st.dataframe(formatted, use_container_width=True, hide_index=True, height=min(44 * len(formatted) + 40, 760))
+    st.download_button(
+        label="Download reviewer CSV",
+        data=reviewer_table.to_csv(index=False),
+        file_name=f"ercot_{profile_key}_annual_screener.csv",
+        mime="text/csv",
+    )
+
+
+def _style_plot(fig: go.Figure, height: int) -> go.Figure:
+    fig.update_layout(
+        height=height,
+        margin={"l": 40, "r": 16, "t": 28, "b": 48},
+        font={"family": BODY_FONT, "size": 12, "color": PALETTE["ink"]},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
+def _render_annual_summary(selected: pd.Series, profile_key: str, duration_hours: int) -> None:
+    baseline = selected[_lens_column(profile_key, 4, "baseline_annual_cost_usd_per_mw_year")]
+    effective_4h = selected[_lens_column(profile_key, 4, "effective_annual_cost_usd_per_mw_year")]
+    effective_8h = selected[_lens_column(profile_key, 8, "effective_annual_cost_usd_per_mw_year")]
+
+    cards = st.columns(5, gap="medium")
+    cards[0].metric("Baseline annual cost", f"${baseline:,.0f}/MW-yr")
+    cards[1].metric(
+        "4h cost reduction",
+        f"{selected[_lens_column(profile_key, 4, 'annual_cost_reduction_pct')]:.1f}%",
+        delta=f"${selected[_lens_column(profile_key, 4, 'annual_cost_reduction_usd_per_mw_year')]:,.0f}",
+    )
+    cards[2].metric(
+        "8h cost reduction",
+        f"{selected[_lens_column(profile_key, 8, 'annual_cost_reduction_pct')]:.1f}%",
+        delta=f"${selected[_lens_column(profile_key, 8, 'annual_cost_reduction_usd_per_mw_year')]:,.0f}",
+    )
+    cards[3].metric(
+        "4h profitable-day share",
+        f"{selected[_lens_column(profile_key, 4, 'profitable_day_share')]:.1f}%",
+    )
+    cards[4].metric(
+        "8h profitable-day share",
+        f"{selected[_lens_column(profile_key, 8, 'profitable_day_share')]:.1f}%",
+    )
+
+    left, right = st.columns([1.3, 1.0], gap="large")
+    with left:
+        annual_cost_fig = go.Figure(
+            data=[
+                go.Bar(
+                    x=["Baseline", "4h Battery", "8h Battery"],
+                    y=[baseline, effective_4h, effective_8h],
+                    marker_color=[PALETTE["sea_soft"], PALETTE["sand"], PALETTE["accent"]],
+                    marker_line_width=0,
+                    hovertemplate="%{x}<br>$%{y:,.0f}/MW-yr<extra></extra>",
+                )
+            ]
+        )
+        annual_cost_fig.update_yaxes(title="Annual cost ($/MW-yr)", gridcolor=PALETTE["line"], zeroline=False)
+        _style_plot(annual_cost_fig, 360)
+        st.plotly_chart(annual_cost_fig, use_container_width=True)
+
+    with right:
+        pre_post = go.Figure()
+        for duration, color in ((4, PALETTE["sand"]), (8, PALETTE["accent"])):
+            pre_column = _lens_column(profile_key, duration, "p95_active_hour_price_usd_per_mwh")
+            post_column = _lens_column(profile_key, duration, "p95_active_hour_effective_price_usd_per_mwh")
+            pre_post.add_trace(
+                go.Bar(
+                    name=f"{duration}h pre-shape",
+                    x=[f"{duration}h"],
+                    y=[selected[pre_column]],
+                    marker_color=PALETTE["sea_soft"],
+                    offsetgroup=f"{duration}_pre",
+                    hovertemplate=f"{duration}h pre-shape<br>$%{{y:.2f}}/MWh<extra></extra>",
+                )
+            )
+            pre_post.add_trace(
+                go.Bar(
+                    name=f"{duration}h post-shape",
+                    x=[f"{duration}h"],
+                    y=[selected[post_column]],
+                    marker_color=color,
+                    offsetgroup=f"{duration}_post",
+                    hovertemplate=f"{duration}h post-shape<br>$%{{y:.2f}}/MWh<extra></extra>",
+                )
+            )
+        pre_post.update_layout(barmode="group")
+        pre_post.update_yaxes(title="P95 active-hour price ($/MWh)", gridcolor=PALETTE["line"], zeroline=False)
+        _style_plot(pre_post, 360)
+        st.plotly_chart(pre_post, use_container_width=True)
+
+
+def _heatmap_figure(frame: pd.DataFrame, value_column: str, title: str, colorbar_title: str) -> go.Figure:
+    pivot = (
+        frame.pivot(index="local_hour", columns="local_month_label", values=value_column)
+        .reindex(index=list(range(24)), columns=list(MONTH_ORDER))
+    )
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.values,
+            x=pivot.columns.tolist(),
+            y=pivot.index.tolist(),
+            colorscale=HEATMAP_SCALE if "market" in value_column else EFFECTIVE_PRICE_SCALE,
+            hovertemplate="<b>%{x}</b><br>Hour %{y}:00<br>$%{z:.2f}/MWh<extra></extra>",
+            colorbar={
+                "title": {"text": colorbar_title, "font": {"size": 11}},
+                "thickness": 12,
+                "len": 0.62,
+                "tickfont": {"size": 10},
+                "outlinewidth": 0,
+            },
+        )
+    )
+    fig.update_layout(title={"text": title, "font": {"size": 14}}, margin={"l": 40, "r": 22, "t": 50, "b": 24})
+    fig.update_yaxes(title="Local hour", autorange="reversed")
+    fig.update_xaxes(side="top")
+    return _style_plot(fig, 420)
+
+
+def _monthly_comparison_figure(
+    selected_location: str,
+    profile_key: str,
+    duration_hours: int,
+) -> go.Figure:
+    if profile_key == "inference_weekday_9_17":
+        frame = hourly_shape.loc[
+            hourly_shape["location"].eq(selected_location)
+            & hourly_shape["profile"].eq(profile_key)
+            & hourly_shape["duration_hours"].eq(duration_hours),
+            :,
+        ].copy()
+        active = (
+            frame.loc[frame["active_hour_flag"]]
+            .groupby(["local_month", "local_month_label"], as_index=False)
+            .agg(value=("market_price_avg_usd_per_mwh", "mean"))
+            .assign(series="Weekday active hours")
+        )
+        overnight = (
+            frame.loc[frame["local_hour"].between(0, 8)]
+            .groupby(["local_month", "local_month_label"], as_index=False)
+            .agg(value=("market_price_avg_usd_per_mwh", "mean"))
+            .assign(series="Weekday overnight")
+        )
+        compare = pd.concat([active, overnight], ignore_index=True)
+    else:
+        frame = daily_windows.loc[
+            daily_windows["location"].eq(selected_location)
+            & daily_windows["profile"].eq(profile_key)
+            & daily_windows["active_load_mwh"].gt(0),
+            :,
+        ].copy()
+        active = (
+            frame.groupby(["local_month", "local_month_label"], as_index=False)
+            .agg(value=("baseline_daily_cost_usd_per_mw_day", lambda series: float(series.mean() / 24.0)))
+            .assign(series="Average active-hour price")
+        )
+        charge_avg_column = f"{duration_hours}h_charge_avg_price_usd_per_mwh"
+        charge = (
+            frame.groupby(["local_month", "local_month_label"], as_index=False)
+            .agg(value=(charge_avg_column, "mean"))
+            .assign(series="Selected charge-window average")
+        )
+        compare = pd.concat([active, charge], ignore_index=True)
+
+    fig = go.Figure()
+    color_map = {
+        "Weekday active hours": PALETTE["sea"],
+        "Weekday overnight": PALETTE["sand"],
+        "Average active-hour price": PALETTE["sea"],
+        "Selected charge-window average": PALETTE["accent"],
+    }
+    for series_name, series_frame in compare.groupby("series", sort=False):
+        series_frame = series_frame.sort_values("local_month")
+        fig.add_trace(
+            go.Scatter(
+                x=series_frame["local_month_label"],
+                y=series_frame["value"],
+                mode="lines+markers",
+                name=series_name,
+                marker={"size": 8},
+                line={"width": 2.4, "color": color_map[series_name]},
+                hovertemplate=f"{series_name}<br>%{{x}}: $%{{y:.2f}}/MWh<extra></extra>",
+            )
+        )
+    fig.update_yaxes(title="Average price ($/MWh)", gridcolor=PALETTE["line"], zeroline=False)
+    fig.update_xaxes(categoryorder="array", categoryarray=list(MONTH_ORDER))
+    return _style_plot(fig, 320)
+
+
+def _render_temporal_shape(selected_location: str, profile_key: str, duration_hours: int) -> None:
+    frame = hourly_shape.loc[
+        hourly_shape["location"].eq(selected_location)
+        & hourly_shape["profile"].eq(profile_key)
+        & hourly_shape["duration_hours"].eq(duration_hours),
+        :,
+    ]
+    heat_left, heat_right = st.columns(2, gap="large")
+    with heat_left:
+        st.plotly_chart(
+            _heatmap_figure(
+                frame,
+                "market_price_avg_usd_per_mwh",
+                "Market price shape",
+                "Market price<br>($/MWh)",
+            ),
+            use_container_width=True,
+        )
+    with heat_right:
+        st.plotly_chart(
+            _heatmap_figure(
+                frame,
+                "effective_active_price_avg_usd_per_mwh",
+                f"Effective shaped price ({duration_hours}h)",
+                "Effective price<br>($/MWh)",
+            ),
+            use_container_width=True,
+        )
+    st.plotly_chart(
+        _monthly_comparison_figure(selected_location, profile_key, duration_hours),
+        use_container_width=True,
+    )
+
+
+def _representative_days(selected_location: str, profile_key: str, duration_hours: int) -> pd.DataFrame:
+    prefix = f"{duration_hours}h"
+    frame = daily_windows.loc[
+        daily_windows["location"].eq(selected_location)
+        & daily_windows["profile"].eq(profile_key)
+        & daily_windows["active_load_mwh"].gt(0),
+        :,
+    ].copy()
+    sort_column = f"{prefix}_best_spread_usd_per_mwh"
+    view = frame.loc[
+        :,
+        [
+            "local_date",
+            "local_month_label",
+            f"{prefix}_best_spread_usd_per_mwh",
+            f"{prefix}_charge_start_hour",
+            f"{prefix}_discharge_start_hour",
+            f"{prefix}_profitable",
+        ],
+    ]
+    worst = view.nsmallest(3, sort_column).assign(bucket="Worst")
+    best = view.nlargest(3, sort_column).assign(bucket="Best")
+    out = pd.concat([best, worst], ignore_index=True)
+    out = out.rename(
+        columns={
+            "local_date": "Date",
+            "local_month_label": "Month",
+            f"{prefix}_best_spread_usd_per_mwh": "Best Spread ($/MWh)",
+            f"{prefix}_charge_start_hour": "Charge Start Hour",
+            f"{prefix}_discharge_start_hour": "Discharge Start Hour",
+            f"{prefix}_profitable": "Profitable",
+            "bucket": "Bucket",
+        }
+    )
+    return out
+
+
+def _render_flexibility_tab(selected: pd.Series, profile_key: str, duration_hours: int) -> None:
+    prefix = f"{duration_hours}h"
+    frame = daily_windows.loc[
+        daily_windows["location"].eq(selected["location"])
+        & daily_windows["profile"].eq(profile_key)
+        & daily_windows["active_load_mwh"].gt(0),
+        :,
+    ].copy()
+
+    comparison_col, raw_col = st.columns([1.4, 1.0], gap="large")
+    with comparison_col:
+        monthly = (
+            frame.groupby(["local_month", "local_month_label"], as_index=False)
+            .agg(
+                profitable_day_share=(f"{prefix}_profitable", lambda series: float(series.mean() * 100.0)),
+                average_best_spread=(f"{prefix}_best_spread_usd_per_mwh", "mean"),
+            )
+            .sort_values("local_month")
         )
 
-st.markdown("---")
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=monthly["local_month_label"],
+                y=monthly["profitable_day_share"],
+                marker_color=PALETTE["sea_soft"],
+                name="Profitable day share",
+                hovertemplate="%{x}<br>%{y:.1f}% of active days<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=monthly["local_month_label"],
+                y=monthly["average_best_spread"],
+                mode="lines+markers",
+                marker={"size": 8},
+                line={"width": 2.4, "color": PALETTE["accent"]},
+                name="Average best spread",
+                yaxis="y2",
+                hovertemplate="%{x}<br>$%{y:.2f}/MWh<extra></extra>",
+            )
+        )
+        fig.update_layout(
+            yaxis={"title": "Profitable day share (%)", "gridcolor": PALETTE["line"], "zeroline": False},
+            yaxis2={"title": "Average best spread ($/MWh)", "overlaying": "y", "side": "right", "showgrid": False},
+            barmode="group",
+        )
+        _style_plot(fig, 330)
+        st.plotly_chart(fig, use_container_width=True)
+
+        spread_distribution = go.Figure(
+            data=[
+                go.Histogram(
+                    x=frame[f"{prefix}_best_spread_usd_per_mwh"],
+                    nbinsx=42,
+                    marker_color=PALETTE["sand"] if duration_hours == 4 else PALETTE["accent"],
+                    opacity=0.86,
+                    hovertemplate="$%{x:.2f}/MWh<br>%{y} days<extra></extra>",
+                )
+            ]
+        )
+        spread_distribution.update_xaxes(title="Best daily causal spread ($/MWh)", gridcolor=PALETTE["line"], zerolinecolor=PALETTE["line_strong"])
+        spread_distribution.update_yaxes(title="Days", gridcolor=PALETTE["line"], zeroline=False)
+        _style_plot(spread_distribution, 280)
+        st.plotly_chart(spread_distribution, use_container_width=True)
+
+        st.dataframe(_representative_days(str(selected["location"]), profile_key, duration_hours), use_container_width=True, hide_index=True)
+
+    with raw_col:
+        if duration_hours == 8:
+            delta = (
+                selected[_lens_column(profile_key, 8, "annual_cost_reduction_pct")]
+                - selected[_lens_column(profile_key, 4, "annual_cost_reduction_pct")]
+            )
+            st.metric("8h minus 4h annual cost reduction", f"{delta:.1f} percentage points")
+        st.dataframe(
+            build_selected_metric_table(selected, profile_key, focus_duration=duration_hours),
+            use_container_width=True,
+            hide_index=True,
+            height=620,
+        )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# § 4 — Screener table
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.markdown("### Location Rankings")
-
-tab_reviewer, tab_raw = st.tabs(["Reviewer View", "Full Metrics"])
-
-with tab_reviewer:
-    reviewer_df = build_reviewer_table(metrics)
-    formatted = format_reviewer_table(reviewer_df)
-    st.dataframe(
-        formatted,
-        use_container_width=True,
-        hide_index=True,
-        height=min(42 * len(formatted) + 38, 680),
+def _render_analyst_console(profile_key: str, duration_hours: int) -> None:
+    selected = _selected_row(st.session_state["selected_location"])
+    st.markdown("### Analyst Console")
+    tab_summary, tab_shape, tab_4h, tab_8h = st.tabs(
+        ["Annual Summary", "Temporal Shape", "4h Flexibility", "8h Flexibility"]
     )
-    st.download_button(
-        label="Download CSV",
-        data=reviewer_df.to_csv(index=False),
-        file_name="ercot_screener_reviewer.csv",
-        mime="text/csv",
-    )
-
-with tab_raw:
-    st.dataframe(
-        metrics,
-        use_container_width=True,
-        hide_index=True,
-        height=min(42 * len(metrics) + 38, 680),
-    )
-    st.download_button(
-        label="Download CSV",
-        data=metrics.to_csv(index=False),
-        file_name="ercot_screener_raw_metrics.csv",
-        mime="text/csv",
-    )
-
-st.markdown("---")
+    with tab_summary:
+        _render_annual_summary(selected, profile_key, duration_hours)
+    with tab_shape:
+        _render_temporal_shape(str(selected["location"]), profile_key, duration_hours)
+    with tab_4h:
+        _render_flexibility_tab(selected, profile_key, 4)
+    with tab_8h:
+        _render_flexibility_tab(selected, profile_key, 8)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# § 5 — Evidence charts
-# ─────────────────────────────────────────────────────────────────────────────
+def _render_methodology(profile_key: str) -> None:
+    with st.expander("Methodology and scope"):
+        st.markdown(
+            f"""
+**Question:** Which ERCOT hubs and load zones look strongest for annual large-load deployment when the load can be paired with 4-hour or 8-hour battery flexibility?
 
-st.markdown("### Evidence")
+**Active profile in view:** {PROFILE_LABELS[profile_key]}. Rankings and map colors use the selected profile and primary duration lens. The table always shows 4h and 8h side by side for that profile.
 
-chart_tab1, chart_tab2, chart_tab3, chart_tab4 = st.tabs([
-    "Score Breakdown",
-    "Daily Spread Heatmap",
-    "Price Distribution",
-    "Battery Value",
-])
+**Battery convention:** 1 MW battery power per 1 MW load, same-day causal charge then discharge only, 85% round-trip efficiency, no ancillary services, no degradation, and no cross-day state of charge.
 
-# ── 5a: Score breakdown bar chart ────────────────────────────────────────────
+**Annual score inputs:** inverse effective average price, annual cost reduction %, profitable-day share, and active-hour p95 price reduction. Daily best-spread diagnostics support the drilldown but do not drive the primary score.
 
-with chart_tab1:
-    score_components = metrics.sort_values("rank")[
-        ["location", "norm_pct_negative", "norm_pct_below_20",
-         "norm_avg_daily_spread", "norm_pct_above_100"]
-    ].set_index("location")
-
-    component_labels = {
-        "norm_pct_negative": "Negative Hours",
-        "norm_pct_below_20": "Hours < $20",
-        "norm_avg_daily_spread": "Daily Spread",
-        "norm_pct_above_100": "Hours > $100",
-    }
-    component_colors = [PALETTE["sea"], PALETTE["moss"], PALETTE["sand"], PALETTE["clay"]]
-
-    fig_score = go.Figure()
-    for i, (col, label) in enumerate(component_labels.items()):
-        fig_score.add_trace(go.Bar(
-            name=label,
-            x=score_components.index,
-            y=score_components[col] * 0.25,
-            marker_color=component_colors[i],
-            marker_line_width=0,
-            hovertemplate=f"{label}: %{{y:.1f}}<extra></extra>",
-        ))
-
-    fig_score.update_layout(
-        barmode="stack",
-        height=380,
-        margin={"l": 48, "r": 16, "t": 24, "b": 80},
-        font={"family": f"'Inter', {BODY_FONT}", "size": 12, "color": PALETTE["ink"]},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        yaxis={
-            "title": "Score (0–100)",
-            "gridcolor": PALETTE["line"],
-            "zeroline": False,
-        },
-        xaxis={"tickangle": -45},
-        legend={
-            "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.02,
-            "xanchor": "left",
-            "x": 0,
-            "font": {"size": 11},
-        },
-    )
-    st.plotly_chart(fig_score, use_container_width=True)
-
-# ── 5b: Daily spread heatmap ────────────────────────────────────────────────
-
-with chart_tab2:
-    spread_pivot = spreads.copy()
-    spread_pivot["market_date"] = pd.to_datetime(spread_pivot["market_date"])
-    spread_pivot["month"] = spread_pivot["market_date"].dt.strftime("%b")
-    spread_pivot["month_num"] = spread_pivot["market_date"].dt.month
-
-    monthly_spread = (
-        spread_pivot
-        .groupby(["location", "month", "month_num"], as_index=False)["daily_spread"]
-        .mean()
-        .sort_values("month_num")
-    )
-
-    # Order locations by rank
-    location_order = metrics.sort_values("rank")["location"].tolist()
-    heat_data = monthly_spread.pivot(index="location", columns="month", values="daily_spread")
-    heat_data = heat_data.reindex(index=location_order, columns=list(MONTH_ORDER))
-
-    fig_heat = go.Figure(data=go.Heatmap(
-        z=heat_data.values,
-        x=list(MONTH_ORDER),
-        y=heat_data.index.tolist(),
-        colorscale=HEATMAP_SCALE,
-        hovertemplate="<b>%{y}</b><br>%{x}: $%{z:.1f}/MWh<extra></extra>",
-        colorbar={
-            "title": {"text": "Avg Spread<br>($/MWh)", "font": {"size": 11}},
-            "thickness": 12,
-            "len": 0.6,
-            "tickfont": {"size": 10},
-            "outlinewidth": 0,
-        },
-    ))
-
-    fig_heat.update_layout(
-        height=420,
-        margin={"l": 100, "r": 16, "t": 24, "b": 40},
-        font={"family": f"'Inter', {BODY_FONT}", "size": 12, "color": PALETTE["ink"]},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        yaxis={"autorange": "reversed"},
-        xaxis={"side": "top"},
-    )
-    st.plotly_chart(fig_heat, use_container_width=True)
-
-# ── 5c: Price distribution (selected location vs system) ────────────────────
-
-with chart_tab3:
-    loc_prices = prices.loc[prices["location"] == selected_location, "spp"]
-    sys_prices = prices.loc[prices["location"] == "HB_BUSAVG", "spp"]
-
-    fig_dist = go.Figure()
-    fig_dist.add_trace(go.Histogram(
-        x=sys_prices,
-        nbinsx=120,
-        name="HB_BUSAVG (system)",
-        marker_color=PALETTE["sea_soft"],
-        opacity=0.6,
-        hovertemplate="$%{x:.0f}/MWh: %{y} hours<extra></extra>",
-    ))
-    if selected_location != "HB_BUSAVG":
-        fig_dist.add_trace(go.Histogram(
-            x=loc_prices,
-            nbinsx=120,
-            name=selected_location,
-            marker_color=PALETTE["accent"],
-            opacity=0.7,
-            hovertemplate="$%{x:.0f}/MWh: %{y} hours<extra></extra>",
-        ))
-
-    fig_dist.update_layout(
-        barmode="overlay",
-        height=380,
-        margin={"l": 48, "r": 16, "t": 24, "b": 48},
-        font={"family": f"'Inter', {BODY_FONT}", "size": 12, "color": PALETTE["ink"]},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis={
-            "title": "DAM Price ($/MWh)",
-            "gridcolor": PALETTE["line"],
-            "zeroline": True,
-            "zerolinecolor": PALETTE["line_strong"],
-            "range": [-50, 250],
-        },
-        yaxis={
-            "title": "Hours",
-            "gridcolor": PALETTE["line"],
-            "zeroline": False,
-        },
-        legend={
-            "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.02,
-            "xanchor": "left",
-            "x": 0,
-            "font": {"size": 11},
-        },
-    )
-    st.plotly_chart(fig_dist, use_container_width=True)
-
-# ── 5d: Battery value comparison ─────────────────────────────────────────────
-
-with chart_tab4:
-    batt_sorted = battery.merge(
-        metrics[["location", "rank"]], on="location"
-    ).sort_values("rank")
-
-    bar_colors = [
-        PALETTE["accent"] if loc == selected_location else PALETTE["sea_soft"]
-        for loc in batt_sorted["location"]
-    ]
-
-    fig_batt = go.Figure(data=go.Bar(
-        x=batt_sorted["location"],
-        y=batt_sorted["annual_battery_gross_margin_usd"],
-        marker_color=bar_colors,
-        marker_line_width=0,
-        hovertemplate="<b>%{x}</b><br>$%{y:,.0f}/yr<extra></extra>",
-    ))
-
-    fig_batt.update_layout(
-        height=380,
-        margin={"l": 60, "r": 16, "t": 24, "b": 80},
-        font={"family": f"'Inter', {BODY_FONT}", "size": 12, "color": PALETTE["ink"]},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        yaxis={
-            "title": "Annual Gross Margin ($)",
-            "gridcolor": PALETTE["line"],
-            "zeroline": False,
-            "tickformat": "$,.0f",
-        },
-        xaxis={"tickangle": -45},
-    )
-    st.plotly_chart(fig_batt, use_container_width=True)
-    st.caption(
-        "Stylized heuristic: 100 MW battery, 4h charge/discharge cycle, "
-        "85% round-trip efficiency. Not a dispatch optimization."
-    )
+**Scope boundary:** annual hub/load-zone screening only. This is not nodal siting, forecasting, transmission analysis, or production dispatch optimization.
+"""
+        )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# § 6 — Methodology note (collapsed)
-# ─────────────────────────────────────────────────────────────────────────────
+def main() -> None:
+    _init_session_state()
+    selected_profile, selected_duration = _render_controls()
+    active_frame = _active_metrics_frame(selected_profile, selected_duration)
+    _render_hero_cards(active_frame, selected_profile, selected_duration)
+    st.markdown("---")
+    _render_map_section(selected_profile, selected_duration)
+    st.markdown("---")
+    _render_ranking_table(selected_profile)
+    st.markdown("---")
+    _render_analyst_console(selected_profile, selected_duration)
+    st.markdown("---")
+    _render_methodology(selected_profile)
 
-st.markdown("---")
 
-with st.expander("Methodology & assumptions"):
-    st.markdown(f"""
-**Data source:** ERCOT Day-Ahead Market settlement point prices for {SETTINGS.target_year},
-accessed via the `gridstatus` open-source library. {int(metrics.iloc[0]['observations']):,}
-hourly observations per location across {len(metrics)} trading hubs and load zones.
-
-**Battery opportunity score** is a normalized composite (0–100) of four equally-weighted
-components: frequency of negative pricing, frequency of sub-$20 hours, average daily
-price spread, and frequency of $100+ spikes. Min-max normalization across all locations.
-This is a relative ranking, not an absolute economic valuation.
-
-**Battery toy model** uses a simple heuristic — charge in the 4 cheapest hours, discharge
-in the 4 most expensive hours each day — with 85% round-trip efficiency and a stylized
-100 MW system. This is not dispatch optimization and excludes ancillary service revenue,
-degradation, and capacity constraints beyond a single daily cycle.
-
-**Limitations:** Hub/zone granularity only (not nodal). Historical patterns, not forecasts.
-No infrastructure proximity (fiber, substation, water). No transmission constraints.
-See ARCHITECTURE.md for the full specification.
-    """)
-
-st.markdown(
-    '<p class="source-note" style="text-align:center; margin-top:2rem;">'
-    "ERCOT Battery Flexibility Screener · Built with Streamlit + Plotly · "
-    "Data via gridstatus"
-    "</p>",
-    unsafe_allow_html=True,
-)
+if __name__ == "__main__":
+    main()

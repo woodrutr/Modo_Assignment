@@ -1,0 +1,25 @@
+{
+  "end_interval_utc": "2026-01-01T05:00:00+00:00",
+  "issues": [],
+  "location_count": 15,
+  "row_count": 131400,
+  "rows_per_location": {
+    "HB_BUSAVG": 8760,
+    "HB_HOUSTON": 8760,
+    "HB_HUBAVG": 8760,
+    "HB_NORTH": 8760,
+    "HB_PAN": 8760,
+    "HB_SOUTH": 8760,
+    "HB_WEST": 8760,
+    "LZ_AEN": 8760,
+    "LZ_CPS": 8760,
+    "LZ_HOUSTON": 8760,
+    "LZ_LCRA": 8760,
+    "LZ_NORTH": 8760,
+    "LZ_RAYBN": 8760,
+    "LZ_SOUTH": 8760,
+    "LZ_WEST": 8760
+  },
+  "start_interval_utc": "2025-01-01T06:00:00+00:00",
+  "year": 2025
+}

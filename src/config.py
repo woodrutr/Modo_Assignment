@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
+
+
+LoadProfileKey = Literal["training_24x7", "inference_weekday_9_17"]
+BatteryDurationHours = Literal[4, 8]
 
 
 @dataclass(frozen=True)
-class MetricWeights:
+class LegacyMetricWeights:
     pct_negative: float = 0.25
     pct_below_20: float = 0.25
     avg_daily_spread: float = 0.25
@@ -13,11 +18,38 @@ class MetricWeights:
 
 
 @dataclass(frozen=True)
-class BatterySettings:
+class LensScoreWeights:
+    effective_avg_price: float = 0.40
+    annual_cost_reduction_pct: float = 0.25
+    profitable_day_share: float = 0.20
+    p95_active_hour_reduction_pct: float = 0.15
+
+
+@dataclass(frozen=True)
+class LegacyBatterySettings:
     charge_hours_per_day: int = 4
     discharge_hours_per_day: int = 4
     charge_mwh_per_hour: float = 100.0
     round_trip_efficiency: float = 0.85
+
+
+@dataclass(frozen=True)
+class FlexBatterySettings:
+    load_mw: float = 1.0
+    battery_power_mw_per_mw_load: float = 1.0
+    round_trip_efficiency: float = 0.85
+    supported_durations: tuple[BatteryDurationHours, ...] = (4, 8)
+
+
+@dataclass(frozen=True)
+class LoadProfile:
+    key: LoadProfileKey
+    label: str
+    short_label: str
+    description: str
+    active_hours: tuple[int, ...]
+    charge_hours: tuple[int, ...]
+    weekdays_only: bool
 
 
 @dataclass(frozen=True)
@@ -55,9 +87,16 @@ class AppSettings:
         "Market",
         "SPP",
     )
-    metric_weights: MetricWeights = field(default_factory=MetricWeights)
-    battery: BatterySettings = field(default_factory=BatterySettings)
+    legacy_metric_weights: LegacyMetricWeights = field(default_factory=LegacyMetricWeights)
+    lens_score_weights: LensScoreWeights = field(default_factory=LensScoreWeights)
+    legacy_battery: LegacyBatterySettings = field(default_factory=LegacyBatterySettings)
+    flex_battery: FlexBatterySettings = field(default_factory=FlexBatterySettings)
+    profiles: tuple[LoadProfile, ...] = field(default_factory=tuple)
     location_anchors: tuple[LocationAnchor, ...] = field(default_factory=tuple)
+
+    @property
+    def metric_weights(self) -> LegacyMetricWeights:
+        return self.legacy_metric_weights
 
     def raw_dam_path(self, year: int) -> Path:
         return self.raw_dir / f"ercot_dam_spp_{year}.parquet"
@@ -76,6 +115,12 @@ class AppSettings:
 
     def battery_value_path(self, year: int) -> Path:
         return self.metrics_dir / f"ercot_battery_value_{year}.parquet"
+
+    def daily_profile_windows_path(self, year: int) -> Path:
+        return self.metrics_dir / f"ercot_daily_profile_windows_{year}.parquet"
+
+    def hourly_profile_shape_path(self, year: int) -> Path:
+        return self.metrics_dir / f"ercot_hourly_profile_shape_{year}.parquet"
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -100,10 +145,11 @@ PALETTE = {
     "score_low": "#d4c7bb",
     "score_mid": "#90a1a5",
     "score_high": "#355a66",
+    "good": "#5f7a58",
 }
 
-DISPLAY_FONT = "'SF Pro Display','Avenir Next','Segoe UI',sans-serif"
-BODY_FONT = "'SF Pro Text','Avenir Next','Segoe UI',sans-serif"
+DISPLAY_FONT = "'SF Pro Display','Avenir Next','Segoe UI','Helvetica Neue',sans-serif"
+BODY_FONT = "'SF Pro Text','Avenir Next','Segoe UI','Helvetica Neue',sans-serif"
 MONTH_ORDER = (
     "Jan",
     "Feb",
@@ -129,6 +175,11 @@ HEATMAP_SCALE = [
     [0.67, "#b99674"],
     [1.0, "#7c6e70"],
 ]
+EFFECTIVE_PRICE_SCALE = [
+    [0.0, "#dce6ea"],
+    [0.5, "#b89d7d"],
+    [1.0, "#8b624a"],
+]
 
 SETTINGS = AppSettings(
     root_dir=ROOT_DIR,
@@ -136,6 +187,32 @@ SETTINGS = AppSettings(
     raw_dir=DATA_DIR / "raw",
     processed_dir=DATA_DIR / "processed",
     metrics_dir=DATA_DIR / "metrics",
+    profiles=(
+        LoadProfile(
+            key="training_24x7",
+            label="24/7 Training",
+            short_label="Training",
+            description=(
+                "Flat 24/7 large load. Battery charges in cheaper same-day hours and "
+                "offsets later expensive hours."
+            ),
+            active_hours=tuple(range(24)),
+            charge_hours=tuple(range(24)),
+            weekdays_only=False,
+        ),
+        LoadProfile(
+            key="inference_weekday_9_17",
+            label="Weekday 9-5 Inference",
+            short_label="Inference",
+            description=(
+                "Weekday daytime load. Battery charges before the workday and offsets "
+                "the active delivery window."
+            ),
+            active_hours=tuple(range(9, 17)),
+            charge_hours=tuple(range(0, 9)),
+            weekdays_only=True,
+        ),
+    ),
     location_anchors=(
         LocationAnchor(
             location="HB_PAN",
@@ -275,17 +352,63 @@ SETTINGS = AppSettings(
     ),
 )
 
+PROFILE_ORDER = tuple(profile.key for profile in SETTINGS.profiles)
+PROFILE_LOOKUP = {profile.key: profile for profile in SETTINGS.profiles}
+PROFILE_LABELS = {profile.key: profile.label for profile in SETTINGS.profiles}
+PROFILE_SHORT_LABELS = {profile.key: profile.short_label for profile in SETTINGS.profiles}
+DURATION_OPTIONS = SETTINGS.flex_battery.supported_durations
+DURATION_LABELS = {4: "4h", 8: "8h"}
+LENS_KEYS = tuple(
+    (profile.key, duration)
+    for profile in SETTINGS.profiles
+    for duration in SETTINGS.flex_battery.supported_durations
+)
+
+
+def get_profile(profile_key: LoadProfileKey) -> LoadProfile:
+    return PROFILE_LOOKUP[profile_key]
+
+
+def lens_prefix(profile_key: LoadProfileKey, duration_hours: int) -> str:
+    return f"{profile_key}_{duration_hours}h"
+
+
+def lens_metric_column(profile_key: LoadProfileKey, duration_hours: int, metric_name: str) -> str:
+    return f"{lens_prefix(profile_key, duration_hours)}_{metric_name}"
+
+
+def lens_label(profile_key: LoadProfileKey, duration_hours: int) -> str:
+    return f"{PROFILE_SHORT_LABELS[profile_key]} {duration_hours}h"
+
+
 __all__ = [
     "AppSettings",
-    "BatterySettings",
-    "DISPLAY_FONT",
+    "BatteryDurationHours",
     "BODY_FONT",
+    "DISPLAY_FONT",
+    "DURATION_OPTIONS",
+    "DURATION_LABELS",
+    "EFFECTIVE_PRICE_SCALE",
+    "FlexBatterySettings",
     "HEATMAP_SCALE",
+    "LENS_KEYS",
+    "LegacyBatterySettings",
+    "LegacyMetricWeights",
+    "LensScoreWeights",
+    "LoadProfile",
+    "LoadProfileKey",
     "LocationAnchor",
     "MONTH_ORDER",
-    "MetricWeights",
     "PALETTE",
+    "PROFILE_LABELS",
+    "PROFILE_LOOKUP",
+    "PROFILE_ORDER",
+    "PROFILE_SHORT_LABELS",
     "ROOT_DIR",
     "SCORE_SCALE",
     "SETTINGS",
+    "get_profile",
+    "lens_label",
+    "lens_metric_column",
+    "lens_prefix",
 ]
