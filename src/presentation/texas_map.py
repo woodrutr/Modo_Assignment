@@ -198,6 +198,7 @@ def build_texas_location_map(
                     "thickness": 12,
                     "len": 0.42,
                     "y": 0.5,
+                    "tickvals": [0, 25, 50, 75, 100],
                     "tickfont": {"size": 10, "family": BODY_FONT},
                     "outlinewidth": 0,
                 },

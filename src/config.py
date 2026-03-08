@@ -142,9 +142,11 @@ PALETTE = {
     "clay": "#8b624a",
     "accent": "#7f4f3f",
     "accent_soft": "#d9c6b8",
-    "score_low": "#d4c7bb",
-    "score_mid": "#90a1a5",
-    "score_high": "#355a66",
+    "score_low": "#d8c8a1",
+    "score_mid_low": "#d9bf74",
+    "score_mid": "#b6bf63",
+    "score_mid_high": "#67a35d",
+    "score_high": "#1f7a4d",
     "good": "#5f7a58",
 }
 
@@ -166,7 +168,9 @@ MONTH_ORDER = (
 )
 SCORE_SCALE = [
     [0.0, PALETTE["score_low"]],
-    [0.42, PALETTE["score_mid"]],
+    [0.18, PALETTE["score_mid_low"]],
+    [0.45, PALETTE["score_mid"]],
+    [0.72, PALETTE["score_mid_high"]],
     [1.0, PALETTE["score_high"]],
 ]
 HEATMAP_SCALE = [

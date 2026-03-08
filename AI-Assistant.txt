@@ -32,3 +32,55 @@
 - the supported runtime is `Python 3.12.x`; `gridstatus==0.34.0` may not install cleanly on `Python 3.13`
 - the Windows launchers were aligned to the Python `3.12.x` contract but were not runtime-verified in a Windows environment
 - a fresh `Python 3.12` install could not be re-run in this local session because only `Python 3.13` was available on the machine
+
+## Session Addendum — 2026-03-07 Product Reframe Pass
+
+### Timestamped Notes
+
+- 2026-03-07T17:34:24-05:00 [architecture] Reframed the app and README from a siting-style screener to the triage claim `ERCOT Flexibility Opportunity Screener`, while preserving the existing analytics artifacts and single truth path.
+- 2026-03-07T17:34:24-05:00 [scope] Replaced the primary dashboard path with exactly 3 top-level tabs: `Screen`, `Evidence`, and `Next Step`. Removed the analyst-console tab stack and methodology panel from the execution path.
+- 2026-03-07T17:34:24-05:00 [decision] Added deterministic `Why it ranks high` and `Next step` presentation helpers in `src/presentation/reviewer_table.py` so the explainer remains metrics-driven rather than freeform.
+- 2026-03-07T17:34:24-05:00 [ux] Tightened canonical selection handling so the map, focus dropdown, selected-region summary, and evidence views all read from the same `selected_location`.
+- 2026-03-07T17:34:24-05:00 [copy] Simplified the README to the triage product story and reduced the default UI evidence surface to one heatmap, one economics comparison, one seasonal view, plus hidden diagnostics.
+
+### Verified State
+
+- 2026-03-07T17:34:24-05:00 `.venv/bin/python -m unittest discover -s tests` — passed (`15` tests)
+- 2026-03-07T17:34:24-05:00 `.venv/bin/python qa_check.py` — passed
+- 2026-03-07T17:34:24-05:00 `rg -n "/Users/" README.md ARCHITECTURE.md` — no matches
+- 2026-03-07T17:34:24-05:00 `rg -n "compiled_backup|\\.pyc|missing-source|recovery" AI-Assistant.txt` — no matches
+- 2026-03-07T17:34:24-05:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8530` — booted cleanly
+
+### Open / Pending
+
+- manual browser click-through of the new 3-tab triage flow is not yet re-verified after this simplification pass
+- static reviewer inspection of the new `st.table` ranking surface has not been re-checked in a browser session
+
+- 2026-03-07T19:43:53-05:00 [ux] Replaced the narrow selected-region `st.metric` cards with custom stat cards because Streamlit was truncating both labels and values with ellipses in that constrained column width.
+- 2026-03-07T19:43:53-05:00 [verification] `.venv/bin/python -m py_compile app.py` passed after the stat-card refactor.
+- 2026-03-07T19:43:53-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8531` booted cleanly after the truncation fix.
+- 2026-03-07T19:47:16-05:00 [ux] Replaced the three-card selected-region summary with a single stacked summary block because the mini-card layout still broke values awkwardly in the narrow right-hand column.
+- 2026-03-07T19:47:16-05:00 [verification] `.venv/bin/python -m py_compile app.py` passed after the summary-stack refactor.
+- 2026-03-07T19:47:16-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8532` booted cleanly after the layout cleanup.
+- 2026-03-07T19:55:13-05:00 [state] Moved the screen-level focus selector above both the map and the selected-region summary so the dropdown becomes the single shared control before either surface renders.
+- 2026-03-07T19:55:13-05:00 [ux] Replaced the one-size-fits-all `Why it ranks high` explainer with a rank-aware explainer that can now render `Why it ranks high`, `Why it sits mid-pack`, or `Why it ranks lower` depending on active-lens position.
+- 2026-03-07T19:55:13-05:00 [verification] `.venv/bin/python -m unittest discover -s tests` passed (`16` tests) after the rank-aware explainer and shared-focus changes.
+- 2026-03-07T19:55:13-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8533` booted cleanly after the map/dropdown state-flow refactor.
+- 2026-03-07T20:01:47-05:00 [ux] Replaced the weak evidence-tab economics block with a one-sentence economic takeaway, a savings-bridge waterfall, selected-vs-ERCOT-median benchmark cards, one monthly driver chart, and an explicit `8h incremental value vs 4h` footer.
+- 2026-03-07T20:01:47-05:00 [scope] Kept the historical annual artifact contract unchanged; the econ redesign is presentation-only and still reads directly from the precomputed metrics and hourly/daily evidence artifacts.
+- 2026-03-07T20:01:47-05:00 [verification] `.venv/bin/python -m unittest discover -s tests` passed (`16` tests) after the economics redesign.
+- 2026-03-07T20:01:47-05:00 [verification] `.venv/bin/python -m py_compile app.py` passed after the economics redesign and dead-code cleanup.
+- 2026-03-07T20:01:47-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8535` booted cleanly after the final econ-section refactor.
+- 2026-03-07T20:11:38-05:00 [state] Fixed the screen-level focus dropdown so it binds directly to the canonical `selected_location` session key. The prior implementation overwrote fresh user input with the old canonical location before render, which left the other filtered fields unchanged.
+- 2026-03-07T20:11:38-05:00 [verification] `.venv/bin/python -m py_compile app.py` passed after the focus-selector state fix.
+- 2026-03-07T20:11:38-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8536` booted cleanly after the focus-selector state fix.
+- 2026-03-07T20:41:38-05:00 [correction] The direct widget binding for `selected_location` caused a Streamlit session-state exception because the map click path later mutated the same widget key in the same run.
+- 2026-03-07T20:41:38-05:00 [state] Repaired the focus selector using a dedicated widget key plus `on_change` callback. Dropdown changes now update the canonical `selected_location`, while map clicks update the canonical value and the widget is re-synced on the next rerun before instantiation.
+- 2026-03-07T20:41:38-05:00 [verification] `.venv/bin/python -m py_compile app.py` passed after the callback-based focus-selector refactor.
+- 2026-03-07T20:41:38-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8537` booted cleanly after the callback-based focus-selector refactor.
+- 2026-03-07T20:45:06-05:00 [ux] Upgraded the map score legend from a flat 3-stop gray-blue ramp to a higher-contrast muted sequential scale with intermediate stops and fixed score ticks at `0, 25, 50, 75, 100`.
+- 2026-03-07T20:45:06-05:00 [verification] `.venv/bin/python -m py_compile src/config.py src/presentation/texas_map.py app.py` passed after the legend-scale update.
+- 2026-03-07T20:45:06-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8538` booted cleanly after the legend-scale update.
+- 2026-03-07T20:48:28-05:00 [ux] Shifted the map score scale from muted blue-gray to a more expressive amber-to-green money ramp so lower scores read as amber and higher scores read as greener, higher-value regions.
+- 2026-03-07T20:48:28-05:00 [verification] `.venv/bin/python -m py_compile src/config.py src/presentation/texas_map.py app.py` passed after the amber-to-green score-scale update.
+- 2026-03-07T20:48:28-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8539` booted cleanly after the amber-to-green score-scale update.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import pandas as pd
@@ -189,7 +190,151 @@ def build_location_narrative(
     )
 
 
+def _peer_strength_score(
+    series: pd.Series,
+    value: float,
+    *,
+    lower_is_better: bool = False,
+) -> float:
+    numeric = pd.to_numeric(series, errors="coerce").dropna().astype(float)
+    if numeric.empty:
+        return 0.0
+    if lower_is_better:
+        return float((numeric >= float(value)).mean())
+    return float((numeric <= float(value)).mean())
+
+
+def build_why_it_ranks_high(
+    row: pd.Series,
+    peer_frame: pd.DataFrame,
+    profile_key: LoadProfileKey,
+    duration_hours: int,
+) -> str:
+    _, body = build_rank_context(row, peer_frame, profile_key, duration_hours)
+    return body
+
+
+def build_rank_context(
+    row: pd.Series,
+    peer_frame: pd.DataFrame,
+    profile_key: LoadProfileKey,
+    duration_hours: int,
+) -> tuple[str, str]:
+    profitable_share_col = lens_metric_column(profile_key, duration_hours, "profitable_day_share")
+    p50_spread_col = lens_metric_column(profile_key, duration_hours, "p50_daily_best_spread_usd_per_mwh")
+    p90_spread_col = lens_metric_column(profile_key, duration_hours, "p90_daily_best_spread_usd_per_mwh")
+    p95_reduction_col = lens_metric_column(profile_key, duration_hours, "p95_active_hour_reduction_pct")
+    effective_price_col = lens_metric_column(profile_key, duration_hours, "effective_avg_price_usd_per_mwh")
+    reduction_col = lens_metric_column(profile_key, duration_hours, "annual_cost_reduction_pct")
+
+    positive_reason_scores = [
+        (
+            "frequent low-price charging windows",
+            _peer_strength_score(peer_frame[profitable_share_col], row[profitable_share_col]),
+        ),
+        (
+            "higher intraday spread potential",
+            (
+                _peer_strength_score(peer_frame[p50_spread_col], row[p50_spread_col])
+                + _peer_strength_score(peer_frame[p90_spread_col], row[p90_spread_col])
+            )
+            / 2.0,
+        ),
+        (
+            "stronger tail-risk reduction under flexible load shaping",
+            _peer_strength_score(peer_frame[p95_reduction_col], row[p95_reduction_col]),
+        ),
+        (
+            "more variability than peer regions",
+            max(
+                _peer_strength_score(peer_frame["std_price"], row["std_price"]),
+                _peer_strength_score(peer_frame["avg_daily_spread"], row["avg_daily_spread"]),
+            ),
+        ),
+        (
+            "lower effective delivered cost under the active lens",
+            (
+                _peer_strength_score(peer_frame[effective_price_col], row[effective_price_col], lower_is_better=True)
+                + _peer_strength_score(peer_frame[reduction_col], row[reduction_col])
+            )
+            / 2.0,
+        ),
+    ]
+    negative_reason_scores = [
+        ("fewer low-price charging windows", 1.0 - positive_reason_scores[0][1]),
+        ("lower intraday spread potential", 1.0 - positive_reason_scores[1][1]),
+        ("weaker tail-risk reduction under flexible load shaping", 1.0 - positive_reason_scores[2][1]),
+        ("less variability than peer regions", 1.0 - positive_reason_scores[3][1]),
+        ("higher effective delivered cost under the active lens", 1.0 - positive_reason_scores[4][1]),
+    ]
+
+    total = max(1, len(peer_frame))
+    rank = int(row[lens_metric_column(profile_key, duration_hours, "rank")])
+    top_cut = max(1, math.ceil(total / 3))
+    bottom_cut = max(top_cut + 1, math.ceil(total * 2 / 3))
+
+    ranked_positive = sorted(enumerate(positive_reason_scores), key=lambda item: (-item[1][1], item[0]))
+    ranked_negative = sorted(enumerate(negative_reason_scores), key=lambda item: (-item[1][1], item[0]))
+
+    def _join_phrases(phrases: list[str]) -> str:
+        if len(phrases) == 2:
+            return f"{phrases[0]}, and {phrases[1]}"
+        return f"{phrases[0]}, {phrases[1]}, and {phrases[2]}"
+
+    if rank <= top_cut:
+        selected = [phrase for _, (phrase, score) in ranked_positive if score >= 0.60][:3]
+        if len(selected) < 2:
+            selected = [phrase for _, (phrase, _score) in ranked_positive[:2]]
+        if len(selected) < 3:
+            next_phrase = [phrase for _, (phrase, _score) in ranked_positive if phrase not in selected]
+            if next_phrase:
+                selected.append(next_phrase[0])
+        return (
+            "Why it ranks high",
+            f"{row['location']} screens well here because it shows {_join_phrases(selected)}.",
+        )
+
+    if rank >= bottom_cut:
+        selected = [phrase for _, (phrase, score) in ranked_negative if score >= 0.45][:3]
+        if len(selected) < 2:
+            selected = [phrase for _, (phrase, _score) in ranked_negative[:2]]
+        if len(selected) < 3:
+            next_phrase = [phrase for _, (phrase, _score) in ranked_negative if phrase not in selected]
+            if next_phrase:
+                selected.append(next_phrase[0])
+        return (
+            "Why it ranks lower",
+            f"{row['location']} screens lower here because it shows {_join_phrases(selected)}.",
+        )
+
+    positive_phrase = ranked_positive[0][1][0]
+    negative_phrases = [phrase for _, (phrase, _score) in ranked_negative[:2]]
+    if len(negative_phrases) < 2:
+        negative_phrases = [phrase for _, (phrase, _score) in ranked_negative[:1]]
+    if len(negative_phrases) == 1:
+        body = (
+            f"{row['location']} sits mid-pack here because it still shows {positive_phrase}, "
+            f"but it also shows {negative_phrases[0]} relative to peers."
+        )
+    else:
+        body = (
+            f"{row['location']} sits mid-pack here because it still shows {positive_phrase}, "
+            f"but it also shows {negative_phrases[0]} and {negative_phrases[1]} relative to peers."
+        )
+    return ("Why it sits mid-pack", body)
+
+
+def build_next_step_prompt(location: str) -> str:
+    return (
+        f"Next step: prioritize forward-looking price-shape and dispatch modeling for {location}, "
+        "then test nodal, congestion, and interconnection assumptions separately."
+    )
+
+
 __all__ = [
+    "build_next_step_prompt",
+    "build_rank_context",
+    "build_why_it_ranks_high",
     "build_location_narrative",
     "build_reviewer_table",
     "build_selected_metric_table",
