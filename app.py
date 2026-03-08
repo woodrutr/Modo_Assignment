@@ -58,18 +58,19 @@ st.markdown(
 
     .block-container {{
         max-width: 1240px;
-        padding-top: 1.55rem;
+        padding-top: 3.65rem;
         padding-bottom: 2.5rem;
     }}
 
     [data-testid="stAppViewContainer"] > .main {{
-        padding-top: 0.2rem;
+        padding-top: 0 !important;
     }}
 
     header[data-testid="stHeader"] {{
         background: rgba(246, 242, 235, 0.84);
         border-bottom: 1px solid {PALETTE["line"]};
         backdrop-filter: blur(12px);
+        min-height: 2.9rem;
     }}
 
     h1, h2, h3, h4 {{
@@ -454,6 +455,124 @@ def _lens_column(profile_key: str, duration_hours: int, metric_name: str) -> str
     return lens_metric_column(profile_key, duration_hours, metric_name)
 
 
+def _methods_overview_markdown() -> str:
+    efficiency_pct = int(SETTINGS.flex_battery.round_trip_efficiency * 100)
+    return (
+        "Historical annual screener built on ERCOT day-ahead settlement point prices for hubs and load zones.\n\n"
+        f"- Load is normalized to **{SETTINGS.flex_battery.load_mw:.0f} MW**.\n"
+        f"- Battery power is **{SETTINGS.flex_battery.battery_power_mw_per_mw_load:.0f} MW per MW of load**.\n"
+        f"- Supported durations are **{DURATION_OPTIONS[0]}h** and **{DURATION_OPTIONS[1]}h** with **{efficiency_pct}%** round-trip efficiency.\n"
+        "- The battery heuristic is **not fixed TOU** and **not a vendor capture-rate input**. It is closer to a constrained, ex-post historical oracle on realized prices: on each day, the model enumerates eligible same-day charge and discharge windows, requires charge to finish before discharge starts, and chooses the best positive spread. If no positive spread exists, the battery stays idle.\n"
+        "- Training allows any same-day later active window for discharge. Weekday inference restricts discharge to local weekday active hours and charging to earlier same-day overnight hours.\n"
+        "- **$ / MW-year** is the annual delivered-cost convention for a normalized 1 MW load. Baseline annual cost sums active-hour DAM prices across the year, annual battery value sums daily net value, and effective average price divides effective annual cost by annual active-load MWh.\n"
+        "- The battery outputs should be read as an **upper-bound historical flexibility signal**, not realized project economics.\n"
+        "- The annual score combines effective delivered cost, annual cost reduction, profitable-day share, and active-hour tail-risk reduction.\n"
+        "- Scores are min-max scaled within the current screened sample, so they are cross-sectional triage signals rather than absolute economics or stable year-over-year indexes."
+    )
+
+
+def _methods_map_markdown() -> str:
+    return (
+        "Representative map anchors, not physical assets or exact ERCOT zone centroids.\n\n"
+        "- Marker color: active-lens score on a 0-100 scale\n"
+        "- Marker size: annual cost reduction % under the active profile-duration lens\n"
+        "- Selection: clicking a marker updates the shared `selected_location` used by the summary and evidence tab"
+    )
+
+
+def _methods_ranking_markdown() -> str:
+    return (
+        "Rows are sorted by the active profile-duration rank.\n\n"
+        "- `4h` and `8h` columns are shown side by side for the same load profile\n"
+        "- `Best Fit Lens` is the best rank across all four screen combinations\n"
+        "- Score weights: 40% inverse effective average price, 25% annual cost reduction %, 20% profitable-day share, 15% active-hour p95 reduction\n"
+        "- Scores are sample-relative and min-max scaled across the screened hub/load-zone set; they should not be read as absolute ERCOT-wide economics"
+    )
+
+
+def _methods_selected_region_markdown(profile_key: str, duration_hours: int) -> str:
+    return (
+        f"Shared selected-region summary for the active **{lens_label(profile_key, duration_hours)}** lens.\n\n"
+        "- Rank, effective price, cost reduction, and profitable-day share all come from the same canonical selected location used by the map and evidence tab\n"
+        "- The narrative is deterministic and peer-relative, not generated ad hoc\n"
+        "- Top-third regions read `Why it ranks high`, middle-third regions read `Why it sits mid-pack`, and bottom-third regions read `Why it ranks lower`\n"
+        "- Lower-ranked regions switch to `Why it sits mid-pack` or `Why it ranks lower` when the peer-relative evidence weakens"
+    )
+
+
+def _methods_heatmap_markdown(profile_key: str, duration_hours: int) -> str:
+    return (
+        f"Month-by-hour average historical ERCOT DAM price for **{PROFILE_LABELS[profile_key]}** under the **{duration_hours}h** lens.\n\n"
+        "- Derived from the precomputed hourly profile-shape artifact\n"
+        "- Uses local market hour and month for display\n"
+        "- Descriptive only: this is not a forecast or a forward curve"
+    )
+
+
+def _methods_economics_markdown(profile_key: str) -> str:
+    efficiency_pct = int(SETTINGS.flex_battery.round_trip_efficiency * 100)
+    return (
+        f"Economics are normalized to **{SETTINGS.flex_battery.load_mw:.0f} MW** of **{PROFILE_LABELS[profile_key]}** load.\n\n"
+        "- Baseline annual cost: sum of active-hour DAM prices across the year for a 1 MW normalized load\n"
+        "- 4h/8h savings: sum of daily battery net value from the historical same-day best-window heuristic\n"
+        f"- Battery heuristic: one same-day cycle, charge before discharge, **{efficiency_pct}%** round-trip efficiency, idle if no positive spread\n"
+        "- This is closer to an ex-post oracle-style realized-price heuristic than a fixed TOU tariff. It does not assume external capture-rate tables.\n"
+        "- Effective annual cost: baseline annual cost minus annual battery value\n"
+        "- Effective average price: effective annual cost divided by annual active load MWh\n"
+        "- These outputs are **gross upper-bound historical flexibility signals**. They do not include capex, degradation, augmentation, financing, or full production dispatch."
+    )
+
+
+def _methods_benchmarks_markdown(profile_key: str, duration_hours: int) -> str:
+    return (
+        f"Peer benchmark cards for the active **{lens_label(profile_key, duration_hours)}** lens.\n\n"
+        "- Each card compares the selected region against the median of the current screened hub/load-zone sample\n"
+        "- Effective delivered cost is lower-is-better; annual cost reduction and active-hour risk reduction are higher-is-better\n"
+        "- These medians are screen-relative benchmarks, not full ERCOT nodal population statistics"
+    )
+
+
+def _methods_driver_markdown(profile_key: str, duration_hours: int) -> str:
+    if profile_key == "inference_weekday_9_17":
+        return (
+            "Monthly driver view for weekday inference load.\n\n"
+            "- Compares monthly average weekday active-hour prices against monthly average overnight charge-window prices\n"
+            "- The wider the gap, the more room the battery has to lower delivered cost\n"
+            "- Historical only: not a forward curve"
+        )
+    return (
+        f"Monthly driver view for {duration_hours}h training flexibility.\n\n"
+        "- Shows the monthly average best same-day spread available to the battery\n"
+        "- Higher bars indicate more historical room for battery-backed cost shaping\n"
+        "- Historical only: not a forward curve"
+    )
+
+
+def _methods_diagnostics_markdown(profile_key: str, duration_hours: int) -> str:
+    return (
+        f"Technical diagnostics for **{lens_label(profile_key, duration_hours)}**.\n\n"
+        "- Daily causal window log: one row per eligible local day with the selected same-day charge and discharge windows\n"
+        "- Raw metric values: the precomputed artifact fields for the selected region under the current profile context\n"
+        "- These diagnostics are supporting evidence, not the primary decision surfaces"
+    )
+
+
+def _render_info_popover(markdown_text: str, key: str) -> None:
+    with st.popover("?", help="Methods", type="tertiary", key=key):
+        st.markdown(markdown_text)
+
+
+def _render_section_header(title: str, info_markdown: str | None = None, key: str | None = None) -> None:
+    if not info_markdown or not key:
+        st.markdown(f"### {title}")
+        return
+    title_col, info_col = st.columns([0.96, 0.04], gap="small")
+    with title_col:
+        st.markdown(f"### {title}")
+    with info_col:
+        _render_info_popover(info_markdown, key)
+
+
 def _init_session_state() -> None:
     if "selected_profile" not in st.session_state:
         st.session_state["selected_profile"] = PROFILE_ORDER[0]
@@ -501,6 +620,7 @@ def _render_controls() -> tuple[str, int]:
             format_func=lambda key: PROFILE_LABELS[key],
             horizontal=True,
             key="selected_profile",
+            help="Switches the active load shape used for ranking, map coloring, and evidence views.",
         )
     with controls_duration:
         selected_duration = st.radio(
@@ -509,6 +629,7 @@ def _render_controls() -> tuple[str, int]:
             format_func=lambda duration: f"{duration}h",
             horizontal=True,
             key="selected_duration",
+            help="Switches the primary 4h vs 8h ranking lens. The app still shows both durations in comparison surfaces.",
         )
     with controls_note:
         st.markdown(
@@ -517,6 +638,7 @@ def _render_controls() -> tuple[str, int]:
             'flexibility-sensitive.</div>',
             unsafe_allow_html=True,
         )
+        _render_info_popover(_methods_overview_markdown(), "methods_overview")
     return selected_profile, int(selected_duration)
 
 
@@ -583,6 +705,7 @@ def _render_focus_selector(
         ),
         key=widget_key,
         on_change=_sync_focus_selector_from_widget,
+        help="Shared focus control for the map, selected-region summary, and evidence tab.",
     )
 
 
@@ -652,7 +775,7 @@ def _render_benchmark_card(title: str, selected_value: str, median_value: str) -
             '<div class="benchmark-card">'
             f'<div class="benchmark-title">{title}</div>'
             f'<div class="benchmark-selected">{selected_value}</div>'
-            f'<div class="benchmark-median">ERCOT median: {median_value}</div>'
+            f'<div class="benchmark-median">Screen median: {median_value}</div>'
             "</div>"
         ),
         unsafe_allow_html=True,
@@ -666,9 +789,9 @@ def _render_interpretation_panel(active_frame: pd.DataFrame, profile_key: str, d
         (
             f"Under the <strong>{lens_label(profile_key, duration_hours)}</strong> lens, higher-ranked regions combine "
             f"lower effective delivered cost, stronger battery-enabled cost reduction, and better active-hour risk "
-            f"shaping for <strong>{PROFILE_LABELS[profile_key]}</strong>. Start with <strong>{leader['location']}</strong> "
-            f"and the other top-ranked regions below, then use the evidence tab to decide where deeper forward-looking "
-            f"modeling should go next."
+            f"shaping for <strong>{PROFILE_LABELS[profile_key]}</strong>. Read the ranking as an "
+            f"<strong>upper-bound historical flexibility signal</strong>, then start with <strong>{leader['location']}</strong> "
+            f"and the other top-ranked regions below to decide where deeper forward-looking modeling should go next."
         ),
     )
 
@@ -753,14 +876,18 @@ def _render_screen_tab(profile_key: str, duration_hours: int) -> None:
 
     map_col, detail_col = st.columns([1.8, 1.05], gap="large")
     with map_col:
-        st.markdown("### Screen Map")
+        _render_section_header("Screen Map", _methods_map_markdown(), "methods_map")
         _render_location_map(profile_key, duration_hours)
     with detail_col:
-        st.markdown("### Selected Region")
+        _render_section_header(
+            "Selected Region",
+            _methods_selected_region_markdown(profile_key, duration_hours),
+            "methods_selected_region",
+        )
         _render_selected_location_card(active_frame, profile_key, duration_hours)
 
     st.markdown("")
-    st.markdown("### Ranked Regions")
+    _render_section_header("Ranked Regions", _methods_ranking_markdown(), "methods_ranking")
     st.caption("Selected region is highlighted. Use the focus control or map click to keep all screen surfaces aligned.")
     _render_ranking_table(profile_key)
 
@@ -823,12 +950,13 @@ def _render_economic_takeaway(selected: pd.Series, profile_key: str) -> None:
     incremental_8h = savings_8h - savings_4h
     effective_8h_price = selected[_lens_column(profile_key, 8, "effective_avg_price_usd_per_mwh")]
     _render_panel_card(
-        "Economic takeaway",
+        "Upper-bound historical flexibility signal",
         (
             f"For <strong>1 MW</strong> of <strong>{profile_label}</strong> load at <strong>{location}</strong>, "
-            f"<strong>4h</strong> storage cuts annual delivered cost by <strong>${savings_4h:,.0f}/MW-yr</strong>. "
-            f"Moving to <strong>8h</strong> adds <strong>${incremental_8h:,.0f}/MW-yr</strong> of incremental value, "
-            f"bringing the effective delivered price to <strong>${effective_8h_price:.2f}/MWh</strong>."
+            f"the historical same-day heuristic implies an upper-bound gross flexibility value of "
+            f"<strong>${savings_4h:,.0f}/MW-yr</strong> for <strong>4h</strong>. Moving to <strong>8h</strong> adds "
+            f"<strong>${incremental_8h:,.0f}/MW-yr</strong> of incremental gross value, bringing the implied effective "
+            f"delivered price to <strong>${effective_8h_price:.2f}/MWh</strong>. This is a screening signal, not net project economics."
         ),
     )
 
@@ -938,8 +1066,8 @@ def _render_incremental_value_footer(selected: pd.Series, profile_key: str) -> N
         "8h incremental value vs 4h",
         (
             f"Relative to <strong>4h</strong>, the <strong>8h</strong> case adds "
-            f"<strong>${incremental_savings:,.0f}/MW-yr</strong> of annual value, improves cost reduction by "
-            f"<strong>{incremental_pct:.1f} percentage points</strong>, and lowers effective delivered price by "
+            f"<strong>${incremental_savings:,.0f}/MW-yr</strong> of incremental gross screening value, improves cost reduction by "
+            f"<strong>{incremental_pct:.1f} percentage points</strong>, and lowers implied effective delivered price by "
             f"<strong>${incremental_price:.2f}/MWh</strong>."
         ),
     )
@@ -952,7 +1080,7 @@ def _render_evidence_tab(profile_key: str, duration_hours: int) -> None:
     st.markdown(f"### Evidence For {location}")
     st.caption(
         f"These views support the {lens_label(profile_key, duration_hours)} screen and help explain "
-        "why this region looks flexibility-sensitive."
+        "why this region looks flexibility-sensitive under an upper-bound historical heuristic."
     )
     _render_economic_takeaway(selected, profile_key)
     st.markdown("")
@@ -963,7 +1091,11 @@ def _render_evidence_tab(profile_key: str, duration_hours: int) -> None:
         & hourly_shape["duration_hours"].eq(duration_hours),
         :,
     ]
-    st.markdown('<div class="chart-kicker">Raw price shape</div>', unsafe_allow_html=True)
+    heat_title_col, heat_info_col = st.columns([0.96, 0.04], gap="small")
+    with heat_title_col:
+        st.markdown('<div class="chart-kicker">Raw price shape</div>', unsafe_allow_html=True)
+    with heat_info_col:
+        _render_info_popover(_methods_heatmap_markdown(profile_key, duration_hours), "methods_heatmap")
     st.plotly_chart(
         _heatmap_figure(
             heatmap_frame,
@@ -975,17 +1107,32 @@ def _render_evidence_tab(profile_key: str, duration_hours: int) -> None:
 
     econ_left, econ_right = st.columns([1.35, 1.0], gap="large")
     with econ_left:
-        st.markdown('<div class="chart-kicker">Savings bridge</div>', unsafe_allow_html=True)
+        econ_title_col, econ_info_col = st.columns([0.94, 0.06], gap="small")
+        with econ_title_col:
+            st.markdown('<div class="chart-kicker">Savings bridge</div>', unsafe_allow_html=True)
+        with econ_info_col:
+            _render_info_popover(_methods_economics_markdown(profile_key), "methods_economics")
         st.plotly_chart(
             _economics_waterfall_figure(selected, profile_key),
             use_container_width=True,
         )
     with econ_right:
-        st.markdown('<div class="chart-kicker">Selected vs ERCOT median</div>', unsafe_allow_html=True)
+        bench_title_col, bench_info_col = st.columns([0.94, 0.06], gap="small")
+        with bench_title_col:
+            st.markdown('<div class="chart-kicker">Selected vs screen median</div>', unsafe_allow_html=True)
+        with bench_info_col:
+            _render_info_popover(
+                _methods_benchmarks_markdown(profile_key, duration_hours),
+                "methods_benchmarks",
+            )
         _render_selected_vs_median_benchmarks(active_frame, selected, profile_key, duration_hours)
 
     driver_title, driver_figure = _monthly_driver_figure(location, profile_key, duration_hours)
-    st.markdown(f'<div class="chart-kicker">{driver_title}</div>', unsafe_allow_html=True)
+    driver_title_col, driver_info_col = st.columns([0.96, 0.04], gap="small")
+    with driver_title_col:
+        st.markdown(f'<div class="chart-kicker">{driver_title}</div>', unsafe_allow_html=True)
+    with driver_info_col:
+        _render_info_popover(_methods_driver_markdown(profile_key, duration_hours), "methods_driver")
     st.plotly_chart(
         driver_figure,
         use_container_width=True,
@@ -993,6 +1140,10 @@ def _render_evidence_tab(profile_key: str, duration_hours: int) -> None:
     _render_incremental_value_footer(selected, profile_key)
 
     with st.expander("Additional diagnostics"):
+        _render_info_popover(
+            _methods_diagnostics_markdown(profile_key, duration_hours),
+            "methods_diagnostics",
+        )
         diagnostics_left, diagnostics_right = st.columns([1.25, 1.0], gap="large")
         with diagnostics_left:
             st.markdown('<div class="chart-kicker">Daily causal window log</div>', unsafe_allow_html=True)
@@ -1052,7 +1203,9 @@ def _render_next_step_tab(profile_key: str, duration_hours: int) -> None:
                 '<ul class="panel-list">'
                 "<li>historical annual ERCOT hubs and load zones only</li>"
                 "<li>no nodal or transmission overlays in the current screen</li>"
-                "<li>stylized same-day battery convention, not production dispatch</li>"
+                "<li>stylized one-cycle same-day battery convention, not production dispatch</li>"
+                "<li>`4h` and `8h` outputs are upper-bound gross flexibility signals, not net project economics</li>"
+                "<li>scores are sample-relative within the screened region set</li>"
                 "<li>results identify where deeper analysis may be worth doing next</li>"
                 "</ul>"
             ),

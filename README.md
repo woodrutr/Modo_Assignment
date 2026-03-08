@@ -12,7 +12,7 @@ It is a triage tool, not a siting engine. The app uses historical ERCOT day-ahea
 ## What This Helps You Decide
 
 - which ERCOT regions look most flexibility-sensitive under the active annual lens
-- where battery-backed load shaping appears to reduce delivered cost the most
+- where an upper-bound historical battery-backed load-shaping signal looks strongest
 - which regions merit deeper forward-looking modeling next
 
 ## What This Is Not
@@ -59,6 +59,33 @@ The Streamlit app is organized into 3 tabs:
 - load profiles: `training_24x7` and `inference_weekday_9_17`
 - battery convention: `1 MW` battery power per `1 MW` load, `4h` and `8h` durations, `85%` round-trip efficiency, same-day causal charge then discharge only
 - score inputs: effective delivered cost, annual cost reduction, profitable-day share, and active-hour tail-risk reduction
+
+### Battery Heuristic
+
+- the `4h` and `8h` cases are **not fixed TOU schedules**
+- they are **not vendor capture-rate inputs**
+- they are closer to a constrained, ex-post historical oracle on realized DAM prices
+- for each local day, profile, and battery duration, the model enumerates all eligible same-day charge and discharge windows, requires charge to finish before discharge starts, and chooses the best positive spread after `85%` round-trip efficiency
+- if no positive spread exists, the battery stays idle for that day
+- the resulting `4h` and `8h` values should be read as **upper-bound historical flexibility signals**, not realized project economics
+
+### `$ / MW-year` Convention
+
+- load is normalized to `1 MW`
+- baseline annual cost is the sum of active-hour DAM prices across the year for that normalized `1 MW` load
+- annual cost reduction in `USD / MW-year` is the sum of daily battery net value across the year
+- effective annual cost is baseline annual cost minus annual battery value
+- effective average price in `USD / MWh` is effective annual cost divided by annual active-load MWh
+- for `24/7 Training`, annual active-load MWh comes from all hours; for `Weekday 9-5 Inference`, it comes only from active weekday daytime hours
+- these are gross screening values only; the repo does not include capex, degradation, augmentation, financing, or production dispatch economics
+
+### Score Construction
+
+- `40%` inverse effective average price
+- `25%` annual cost reduction %
+- `20%` profitable-day share
+- `15%` active-hour `p95` price reduction
+- scores are min-max scaled within the screened hub/load-zone sample, so they are cross-sectional triage signals rather than absolute ERCOT-wide indexes
 
 The app remains presentation-only. Core metrics are computed upstream and read from Parquet artifacts.
 

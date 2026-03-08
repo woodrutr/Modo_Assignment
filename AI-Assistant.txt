@@ -84,3 +84,59 @@
 - 2026-03-07T20:48:28-05:00 [ux] Shifted the map score scale from muted blue-gray to a more expressive amber-to-green money ramp so lower scores read as amber and higher scores read as greener, higher-value regions.
 - 2026-03-07T20:48:28-05:00 [verification] `.venv/bin/python -m py_compile src/config.py src/presentation/texas_map.py app.py` passed after the amber-to-green score-scale update.
 - 2026-03-07T20:48:28-05:00 [verification] `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8539` booted cleanly after the amber-to-green score-scale update.
+
+## Session Addendum — 2026-03-08 Methods Pass
+
+### Timestamped Notes
+
+- 2026-03-08T10:21:58-04:00 [methods] Strengthened the in-app method disclosure so the overview and economics popovers explicitly answer the battery-heuristic and `$ / MW-year` normalization questions.
+- 2026-03-08T10:21:58-04:00 [decision] Clarified that the `4h` and `8h` cases are not fixed TOU schedules and not vendor capture-rate inputs; they are constrained, ex-post historical best-window heuristics on realized DAM prices.
+- 2026-03-08T10:21:58-04:00 [ux] Added targeted `?` method popovers for the selected-region summary, selected-vs-median benchmark cards, and additional diagnostics, while removing the orphaned explainer popover so the right-hand screen surface stays cleaner.
+- 2026-03-08T10:21:58-04:00 [docs] Expanded the README `Data and Method` section with explicit battery-heuristic, score-construction, and `USD / MW-year` normalization notes.
+
+### Verified State
+
+- 2026-03-08T10:21:58-04:00 `.venv/bin/python -m py_compile app.py` — passed
+- 2026-03-08T10:21:58-04:00 `.venv/bin/python -m unittest discover -s tests` — passed (`16` tests)
+- 2026-03-08T10:21:58-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8540` — booted cleanly
+
+### Open / Pending
+
+- manual browser review of the new method popover placement and readability is not yet re-verified after this pass
+- the README methods rewrite has not yet been reviewed from the perspective of a non-technical hiring reviewer
+
+## Session Addendum — 2026-03-08 Upper-Bound Framing Pass
+
+### Timestamped Notes
+
+- 2026-03-08T10:38:05-04:00 [decision] Locked the product framing to `upper-bound historical flexibility signal` rather than realized project economics, while keeping the `4h` and `8h` lenses unchanged.
+- 2026-03-08T10:38:05-04:00 [methods] Tightened the app methods copy to state explicitly that the battery outputs are gross screening values from a constrained ex-post heuristic, not fixed TOU, not vendor capture rates, and not net project economics.
+- 2026-03-08T10:38:05-04:00 [correction] Renamed the benchmark language from `ERCOT median` to `screen median` because the implementation compares against the current screened sample, not an ERCOT-wide population benchmark.
+- 2026-03-08T10:38:05-04:00 [docs] Updated the README to call out the upper-bound signal framing, sample-relative score construction, and the exclusion of capex, degradation, financing, and production dispatch economics.
+
+### Verified State
+
+- 2026-03-08T10:38:05-04:00 `.venv/bin/python -m py_compile app.py` — passed
+- 2026-03-08T10:38:05-04:00 `.venv/bin/python -m unittest discover -s tests` — passed (`16` tests)
+- 2026-03-08T10:38:05-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8541` — booted cleanly
+
+### Open / Pending
+
+- manual browser review of the updated upper-bound framing and `screen median` label is not yet re-verified after this pass
+- the app still does not include capital-cost or net project economics overlays; that remains an intentional non-goal in the current screen
+
+## Session Addendum — 2026-03-08 Top Banner Fix
+
+### Timestamped Notes
+
+- 2026-03-08T10:44:31-04:00 [ux] Increased the main content top offset and removed the residual top compression in the Streamlit container so the sticky header/banner no longer crowds or hides the hero title.
+- 2026-03-08T10:44:31-04:00 [css] Set a larger `.block-container` top padding, zeroed the extra main top padding override, and pinned a minimum header height so the layout contract is more stable across reruns.
+
+### Verified State
+
+- 2026-03-08T10:44:31-04:00 `.venv/bin/python -m py_compile app.py` — passed
+- 2026-03-08T10:44:31-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8542` — booted cleanly
+
+### Open / Pending
+
+- manual browser confirmation of the hero-title clearance under the sticky header is still required after this CSS adjustment
