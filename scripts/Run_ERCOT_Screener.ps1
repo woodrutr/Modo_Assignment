@@ -1,7 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $scriptDir
+$repoRoot = Resolve-Path (Join-Path $scriptDir "..")
+Set-Location $repoRoot
 
 function Get-PythonLauncher {
     if (Get-Command py -ErrorAction SilentlyContinue) {
@@ -21,7 +22,7 @@ function Get-PythonLauncher {
     throw "This launcher requires Python 3.12.x. Install Python 3.12 and recreate .venv-win before running the app."
 }
 
-$venvDir = Join-Path $scriptDir ".venv-win"
+$venvDir = Join-Path $repoRoot ".venv-win"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $venvPip = Join-Path $venvDir "Scripts\pip.exe"
 $venvStreamlit = Join-Path $venvDir "Scripts\streamlit.exe"

@@ -1,5 +1,8 @@
 # ERCOT Flexibility Opportunity Screener
 
+<!-- Replace the URL below with your deployed Streamlit app before submission. -->
+**Hosted dashboard:** [Open the Streamlit app](https://YOUR-DEPLOYED-STREAMLIT-URL)
+
 This tool is designed to help developers, investors, and large-load planners identify which ERCOT regions appear most sensitive to flexibility, and therefore where deeper forward-looking modeling is most likely to add value.
 
 It is a triage tool, not a siting engine. The app uses historical ERCOT day-ahead settlement point prices to rank hubs and load zones under two load profiles and two battery durations:
@@ -121,9 +124,9 @@ python -m src.analytics.metrics --year 2025
 streamlit run app.py
 ```
 
-On macOS you can also double-click [Run_ERCOT_Screener.command](Run_ERCOT_Screener.command). It expects `Python 3.12.x`, bootstraps `.venv`, validates data availability, builds missing metrics artifacts, and launches Streamlit.
+On macOS you can also double-click [Run_ERCOT_Screener.command](scripts/Run_ERCOT_Screener.command). It expects `Python 3.12.x`, bootstraps `.venv`, validates data availability, builds missing metrics artifacts, and launches Streamlit.
 
-On Windows, the repo also includes [Run_ERCOT_Screener.bat](Run_ERCOT_Screener.bat) and [Run_ERCOT_Screener.ps1](Run_ERCOT_Screener.ps1). Those launchers were aligned to the same `Python 3.12.x` contract, but they were not runtime-verified in this macOS environment.
+On Windows, the repo also includes [Run_ERCOT_Screener.bat](scripts/Run_ERCOT_Screener.bat) and [Run_ERCOT_Screener.ps1](scripts/Run_ERCOT_Screener.ps1). Those launchers were aligned to the same `Python 3.12.x` contract, but they were not runtime-verified in this macOS environment.
 
 The submitted artifact is the Git repo. Local virtual environments, caches, generated Parquet outputs, and OS-specific archive folders are intentionally excluded from version control.
 
@@ -137,7 +140,7 @@ python -m unittest discover -s tests
 python -m src.data.fetch --year 2025
 python -m src.analytics.metrics --year 2025
 streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8510
-python qa_check.py
+python scripts/qa_check.py
 ```
 
 ## Repository Structure
@@ -147,14 +150,16 @@ Modo_Assignment/
 ├── .python-version
 ├── app.py
 ├── README.md
-├── ARCHITECTURE.md
+├── docs/
+│   └── ARCHITECTURE.md
 ├── AI-Assistant.txt
-├── Run_ERCOT_Screener.command
-├── Run_ERCOT_Screener.bat
-├── Run_ERCOT_Screener.ps1
-├── qa_check.py
 ├── requirements.txt
 ├── runtime.txt
+├── scripts/
+│   ├── Run_ERCOT_Screener.command
+│   ├── Run_ERCOT_Screener.bat
+│   ├── Run_ERCOT_Screener.ps1
+│   └── qa_check.py
 ├── data/
 │   ├── raw/
 │   ├── processed/

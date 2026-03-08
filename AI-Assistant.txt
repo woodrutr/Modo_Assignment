@@ -140,3 +140,46 @@
 ### Open / Pending
 
 - manual browser confirmation of the hero-title clearance under the sticky header is still required after this CSS adjustment
+
+## Session Addendum — 2026-03-08 Submission Review Pass
+
+### Timestamped Notes
+
+- 2026-03-08T10:56:13-04:00 [review] Performed a repo-surface submission-readiness pass focused on reviewer-facing hygiene, documentation, tracked files, runtime contract, and residual non-verified items.
+- 2026-03-08T10:56:13-04:00 [docs] Added a hosted-dashboard slot at the top of `README.md` so the submission can lead with a live Streamlit deployment instead of local setup.
+- 2026-03-08T10:56:13-04:00 [decision] Kept the hosted dashboard URL as a single explicit placeholder in the README rather than wiring a deployment-specific link into code or launchers. This keeps the repo environment-agnostic while giving the submission a clean top-level live-app entry point.
+
+### Verified State
+
+- 2026-03-08T10:56:13-04:00 `git ls-files` review — tracked file surface contains source, docs, launchers, tests, and a small validation report; no tracked `.venv`, `compiled_backup`, `__pycache__`, or `__MACOSX` artifacts
+- 2026-03-08T10:56:13-04:00 `du -sh . data data/raw data/processed data/metrics` — workspace `613M`, tracked data surface small (`2.7M` total under `data/`)
+- 2026-03-08T10:56:13-04:00 `nl -ba README.md | sed -n '1,12p'` — hosted dashboard link slot present at the top of the README
+
+### Open / Pending
+
+- the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
+- the tracked `AI-Assistant.txt` remains longer and more iterative than an ideal reviewer-facing AI note, even though the most problematic recovery narrative has already been removed
+
+## Session Addendum — 2026-03-08 Repo Reorganization Pass
+
+### Timestamped Notes
+
+- 2026-03-08T11:12:29-04:00 [structure] Moved secondary docs and utility entrypoints out of the repo root: `ARCHITECTURE.md` -> `docs/ARCHITECTURE.md`, launchers -> `scripts/`, and `qa_check.py` -> `scripts/qa_check.py`.
+- 2026-03-08T11:12:29-04:00 [decision] Kept `AI-Assistant.txt` at the project root because the repo instructions require a root-level append-only ledger for every modifying session.
+- 2026-03-08T11:12:29-04:00 [correction] Updated downstream references in `README.md` and launcher logic to use the new `docs/` and `scripts/` locations. Earlier ledger entries that mention root-level `ARCHITECTURE.md` and `qa_check.py` remain historical records and are superseded by this addendum.
+- 2026-03-08T11:12:29-04:00 [bugfix] The move of `qa_check.py` into `scripts/` initially broke imports because `src` was no longer on `sys.path`. Fixed by resolving `REPO_ROOT` from `__file__` and prepending it before imports in `scripts/qa_check.py`.
+- 2026-03-08T11:12:29-04:00 [verification] Fresh migration verification passed after the path updates: compile, tests, relocated QA script, and a new headless Streamlit boot all completed successfully from the reorganized tree.
+
+### Verified State
+
+- 2026-03-08T11:12:29-04:00 `rg -n "ARCHITECTURE\.md|Run_ERCOT_Screener\.command|Run_ERCOT_Screener\.bat|Run_ERCOT_Screener\.ps1|qa_check\.py" README.md docs scripts app.py src tests .gitignore` — only expected updated references remained in `README.md` and the Windows launcher self-reference in `scripts/Run_ERCOT_Screener.bat`
+- 2026-03-08T11:12:29-04:00 `.venv/bin/python -m py_compile app.py scripts/qa_check.py` — passed
+- 2026-03-08T11:12:29-04:00 `.venv/bin/python -m unittest discover -s tests` — passed (`16` tests)
+- 2026-03-08T11:12:29-04:00 `.venv/bin/python scripts/qa_check.py` — passed; artifact checks reported `15` location rows, `10950` daily profile-window rows, and `17280` hourly shape rows
+- 2026-03-08T11:12:29-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8550` — booted cleanly from the reorganized repo layout
+
+### Open / Pending
+
+- the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
+- the macOS launcher path migration is code-verified but not re-run end-to-end on a local Python `3.12.x` environment in this session
+- the Windows launchers remain unverified in a Windows runtime
