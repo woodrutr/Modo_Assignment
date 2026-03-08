@@ -30,6 +30,7 @@ from src.presentation.reviewer_table import (
     build_selected_metric_table,
     format_reviewer_table,
 )
+from src.presentation.runtime_artifacts import ensure_dashboard_artifacts
 from src.presentation.texas_map import (
     build_location_map_frame,
     build_texas_location_map,
@@ -387,6 +388,8 @@ def _required_metric_columns() -> set[str]:
 
 
 def _load_parquet_artifact(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(path)
     return _read_parquet_cached(str(path), path.stat().st_mtime_ns)
 
 
@@ -401,8 +404,38 @@ def _stop_for_schema_error(path: Path, missing_columns: list[str]) -> None:
     st.stop()
 
 
+def _stop_for_artifact_bootstrap_error(path: Path, error: Exception) -> None:
+    st.error(
+        "The dashboard could not find the required analytics artifacts and automatic bootstrap failed."
+    )
+    st.markdown(
+        "At startup, the app attempts to ensure the processed DAM parquet exists and then rebuild the "
+        "derived metrics artifacts. That bootstrap did not complete successfully in this environment."
+    )
+    st.code(f"python -m src.data.fetch --year {SETTINGS.target_year}")
+    st.code(f"python -m src.analytics.metrics --year {SETTINGS.target_year}")
+    st.caption(f"Missing artifact: {path}")
+    st.caption(f"Bootstrap error: {error}")
+    st.stop()
+
+
+@st.cache_resource(show_spinner="Preparing annual ERCOT artifacts...")
+def _ensure_runtime_artifacts(year: int) -> None:
+    ensure_dashboard_artifacts(year=year, settings=SETTINGS)
+
+
+def _prepare_artifact(path: Path) -> None:
+    if path.exists():
+        return
+    try:
+        _ensure_runtime_artifacts(SETTINGS.target_year)
+    except Exception as error:  # noqa: BLE001 - deployment failures must surface clearly
+        _stop_for_artifact_bootstrap_error(path, error)
+
+
 def load_metrics() -> pd.DataFrame:
     path = SETTINGS.metrics_path(SETTINGS.target_year)
+    _prepare_artifact(path)
     metrics_frame = _load_parquet_artifact(path)
     missing_columns = sorted(_required_metric_columns().difference(metrics_frame.columns))
     if missing_columns:
@@ -412,6 +445,7 @@ def load_metrics() -> pd.DataFrame:
 
 def load_daily_profile_windows() -> pd.DataFrame:
     path = SETTINGS.daily_profile_windows_path(SETTINGS.target_year)
+    _prepare_artifact(path)
     daily_frame = _load_parquet_artifact(path)
     required = {
         "location",
@@ -430,6 +464,7 @@ def load_daily_profile_windows() -> pd.DataFrame:
 
 def load_hourly_profile_shape() -> pd.DataFrame:
     path = SETTINGS.hourly_profile_shape_path(SETTINGS.target_year)
+    _prepare_artifact(path)
     shape_frame = _load_parquet_artifact(path)
     required = {
         "location",

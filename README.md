@@ -91,6 +91,7 @@ The Streamlit app is organized into 3 tabs:
 - scores are min-max scaled within the screened hub/load-zone sample, so they are cross-sectional triage signals rather than absolute ERCOT-wide indexes
 
 The app remains presentation-only. Core metrics are computed upstream and read from Parquet artifacts.
+If the derived metrics artifacts are missing at startup, the app now attempts a deterministic bootstrap: it first ensures the processed DAM parquet exists, then rebuilds the derived metrics artifacts before rendering.
 
 ## Single Truth Path
 
@@ -174,11 +175,13 @@ Modo_Assignment/
 │   │   └── metrics.py
 │   └── presentation/
 │       ├── reviewer_table.py
+│       ├── runtime_artifacts.py
 │       └── texas_map.py
 └── tests/
     ├── fixtures.py
     ├── test_battery_model.py
     ├── test_metrics.py
+    ├── test_runtime_artifacts.py
     ├── test_reviewer_table.py
     ├── test_texas_map.py
     └── test_validate.py
