@@ -270,8 +270,7 @@ def build_rank_context(
 
     total = max(1, len(peer_frame))
     rank = int(row[lens_metric_column(profile_key, duration_hours, "rank")])
-    top_cut = max(1, math.ceil(total / 3))
-    bottom_cut = max(top_cut + 1, math.ceil(total * 2 / 3))
+    top_cut, bottom_cut = _rank_thresholds(total)
 
     ranked_positive = sorted(enumerate(positive_reason_scores), key=lambda item: (-item[1][1], item[0]))
     ranked_negative = sorted(enumerate(negative_reason_scores), key=lambda item: (-item[1][1], item[0]))
@@ -324,10 +323,86 @@ def build_rank_context(
     return ("Why it sits mid-pack", body)
 
 
-def build_next_step_prompt(location: str) -> str:
+def _rank_thresholds(total: int) -> tuple[int, int]:
+    top_cut = max(1, math.ceil(total / 3))
+    bottom_cut = max(top_cut + 1, math.ceil(total * 2 / 3))
+    return top_cut, bottom_cut
+
+
+def build_next_step_prompt(
+    row: pd.Series,
+    peer_frame: pd.DataFrame,
+    profile_key: LoadProfileKey,
+    duration_hours: int,
+) -> str:
+    rank_col = lens_metric_column(profile_key, duration_hours, "rank")
+    reduction_col = lens_metric_column(profile_key, duration_hours, "annual_cost_reduction_pct")
+    p95_reduction_col = lens_metric_column(profile_key, duration_hours, "p95_active_hour_reduction_pct")
+    reduction_4_col = lens_metric_column(profile_key, 4, "annual_cost_reduction_pct")
+    reduction_8_col = lens_metric_column(profile_key, 8, "annual_cost_reduction_pct")
+    value_4_col = lens_metric_column(profile_key, 4, "annual_cost_reduction_usd_per_mw_year")
+    value_8_col = lens_metric_column(profile_key, 8, "annual_cost_reduction_usd_per_mw_year")
+
+    total = max(1, len(peer_frame))
+    top_cut, bottom_cut = _rank_thresholds(total)
+    rank = int(row[rank_col])
+    location = str(row["location"])
+
+    uplift_pct_points = float(row[reduction_8_col] - row[reduction_4_col])
+    uplift_usd = float(row[value_8_col] - row[value_4_col])
+    tail_strength = _peer_strength_score(peer_frame[p95_reduction_col], row[p95_reduction_col])
+    reduction_strength = _peer_strength_score(peer_frame[reduction_col], row[reduction_col])
+    variability_strength = max(
+        _peer_strength_score(peer_frame["std_price"], row["std_price"]),
+        _peer_strength_score(peer_frame["avg_daily_spread"], row["avg_daily_spread"]),
+    )
+    strong_duration_uplift = uplift_pct_points >= 1.5 and uplift_usd >= 2500.0
+
+    if rank <= top_cut:
+        if strong_duration_uplift:
+            return (
+                f"Next step: prioritize longer-duration forward-looking price-shape and dispatch modeling for {location}, "
+                "because the screen shows meaningful incremental 8h value over 4h, then test nodal, congestion, and interconnection assumptions separately."
+            )
+        if tail_strength >= 0.67:
+            return (
+                f"Next step: prioritize forward-looking active-hour tail-risk and dispatch modeling for {location}, "
+                "because the screen shows unusually strong downside protection under the active lens, then test nodal, congestion, and interconnection assumptions separately."
+            )
+        if variability_strength >= 0.67:
+            return (
+                f"Next step: prioritize forward-looking volatility-persistence and dispatch modeling for {location}, "
+                "then test nodal, congestion, and interconnection assumptions separately."
+            )
+        return (
+            f"Next step: prioritize forward-looking price-shape and dispatch modeling for {location}, "
+            "then test nodal, congestion, and interconnection assumptions separately."
+        )
+
+    if rank >= bottom_cut:
+        if variability_strength >= 0.67 and reduction_strength < 0.5:
+            return (
+                f"Next step: treat {location} as a volatility-led edge case and only advance it if forward-looking "
+                "nodal or congestion work shows value beyond the base screen."
+            )
+        return (
+            f"Next step: deprioritize {location} for now and only revisit it if nodal, congestion, or interconnection "
+            "work reveals a site-specific advantage."
+        )
+
+    if strong_duration_uplift:
+        return (
+            f"Next step: test whether longer-duration flexibility can move {location} from the middle of the pack "
+            "into the first-look set, then validate nodal, congestion, and interconnection assumptions separately."
+        )
+    if tail_strength >= 0.67:
+        return (
+            f"Next step: benchmark {location}'s active-hour downside protection against the top-screening regions with "
+            "forward-looking price-shape and dispatch modeling, then validate nodal, congestion, and interconnection assumptions separately."
+        )
     return (
-        f"Next step: prioritize forward-looking price-shape and dispatch modeling for {location}, "
-        "then test nodal, congestion, and interconnection assumptions separately."
+        f"Next step: benchmark {location} against the top-screening regions with forward-looking price-shape and "
+        "dispatch modeling, then validate nodal, congestion, and interconnection assumptions separately."
     )
 
 

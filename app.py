@@ -891,7 +891,7 @@ def _render_selected_location_card(active_frame: pd.DataFrame, profile_key: str,
     st.markdown("")
     _render_panel_card(
         "What to do next",
-        build_next_step_prompt(str(selected["location"])),
+        build_next_step_prompt(selected, active_frame, profile_key, duration_hours),
     )
 
 

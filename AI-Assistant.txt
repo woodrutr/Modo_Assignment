@@ -158,6 +158,26 @@
 ### Open / Pending
 
 - the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
+
+## Session Addendum — 2026-03-08 Region-Specific Next-Step Prompt Pass
+
+### Timestamped Notes
+
+- 2026-03-08T16:38:59-04:00 [ux] Replaced the static selected-region `What to do next` prompt with a deterministic, metric-driven prompt derived from the same active-lens surface as the rank explainer.
+- 2026-03-08T16:38:59-04:00 [decision] The next-step branching now uses active-lens rank bucket plus measured `8h` uplift over `4h`, tail-risk reduction strength, and volatility strength relative to peers.
+- 2026-03-08T16:38:59-04:00 [scope] Kept the change presentation-only. No analytics artifact schema, score logic, or core battery heuristic changed; only the recommendation text generation in `src/presentation/reviewer_table.py` and the app call site were updated.
+
+### Verified State
+
+- 2026-03-08T16:38:59-04:00 `.venv/bin/python -m py_compile app.py src/presentation/reviewer_table.py tests/test_reviewer_table.py` — passed
+- 2026-03-08T16:38:59-04:00 `.venv/bin/python -m unittest tests.test_reviewer_table` — passed (`5` tests)
+- 2026-03-08T16:38:59-04:00 `.venv/bin/python -m unittest discover -s tests` — passed (`20` tests)
+- 2026-03-08T16:38:59-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8553` — booted cleanly after the prompt refactor
+
+### Open / Pending
+
+- manual browser review of the new region-specific `What to do next` copy across top-, mid-, and lower-ranked regions is still pending
+- the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
 - the tracked `AI-Assistant.txt` remains longer and more iterative than an ideal reviewer-facing AI note, even though the most problematic recovery narrative has already been removed
 
 ## Session Addendum — 2026-03-08 Repo Reorganization Pass

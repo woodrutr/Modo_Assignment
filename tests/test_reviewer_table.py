@@ -166,12 +166,77 @@ class ReviewerTableTests(unittest.TestCase):
         self.assertTrue(any(phrase in body for phrase in allowed_negative))
 
     def test_build_next_step_prompt_uses_required_format(self) -> None:
-        result = build_next_step_prompt("HB_PAN")
-        self.assertEqual(
-            result,
-            "Next step: prioritize forward-looking price-shape and dispatch modeling for HB_PAN, "
-            "then test nodal, congestion, and interconnection assumptions separately.",
+        peer_frame = pd.DataFrame(
+            [
+                {
+                    "location": "HB_TOP",
+                    "std_price": 35.0,
+                    "avg_daily_spread": 40.0,
+                    "training_24x7_4h_rank": 1,
+                    "training_24x7_4h_annual_cost_reduction_pct": 12.0,
+                    "training_24x7_8h_annual_cost_reduction_pct": 15.0,
+                    "training_24x7_4h_annual_cost_reduction_usd_per_mw_year": 22000.0,
+                    "training_24x7_8h_annual_cost_reduction_usd_per_mw_year": 27000.0,
+                    "training_24x7_4h_p95_active_hour_reduction_pct": 30.0,
+                },
+                {
+                    "location": "HB_2",
+                    "std_price": 30.0,
+                    "avg_daily_spread": 32.0,
+                    "training_24x7_4h_rank": 2,
+                    "training_24x7_4h_annual_cost_reduction_pct": 9.0,
+                    "training_24x7_8h_annual_cost_reduction_pct": 10.0,
+                    "training_24x7_4h_annual_cost_reduction_usd_per_mw_year": 18000.0,
+                    "training_24x7_8h_annual_cost_reduction_usd_per_mw_year": 19500.0,
+                    "training_24x7_4h_p95_active_hour_reduction_pct": 24.0,
+                },
+                {
+                    "location": "HB_MID",
+                    "std_price": 25.0,
+                    "avg_daily_spread": 24.0,
+                    "training_24x7_4h_rank": 3,
+                    "training_24x7_8h_rank": 3,
+                    "training_24x7_4h_annual_cost_reduction_pct": 7.0,
+                    "training_24x7_8h_annual_cost_reduction_pct": 9.0,
+                    "training_24x7_4h_annual_cost_reduction_usd_per_mw_year": 15000.0,
+                    "training_24x7_8h_annual_cost_reduction_usd_per_mw_year": 18100.0,
+                    "training_24x7_4h_p95_active_hour_reduction_pct": 22.0,
+                },
+                {
+                    "location": "HB_4",
+                    "std_price": 20.0,
+                    "avg_daily_spread": 18.0,
+                    "training_24x7_4h_rank": 4,
+                    "training_24x7_4h_annual_cost_reduction_pct": 5.0,
+                    "training_24x7_8h_annual_cost_reduction_pct": 6.0,
+                    "training_24x7_4h_annual_cost_reduction_usd_per_mw_year": 11000.0,
+                    "training_24x7_8h_annual_cost_reduction_usd_per_mw_year": 12300.0,
+                    "training_24x7_4h_p95_active_hour_reduction_pct": 14.0,
+                },
+                {
+                    "location": "HB_LOW",
+                    "std_price": 34.0,
+                    "avg_daily_spread": 39.0,
+                    "training_24x7_4h_rank": 5,
+                    "training_24x7_4h_annual_cost_reduction_pct": 2.0,
+                    "training_24x7_8h_annual_cost_reduction_pct": 2.8,
+                    "training_24x7_4h_annual_cost_reduction_usd_per_mw_year": 4200.0,
+                    "training_24x7_8h_annual_cost_reduction_usd_per_mw_year": 5200.0,
+                    "training_24x7_4h_p95_active_hour_reduction_pct": 8.0,
+                },
+            ]
         )
+        result = build_next_step_prompt(peer_frame.iloc[0], peer_frame, "training_24x7", 4)
+        self.assertIn("HB_TOP", result)
+        self.assertIn("incremental 8h value over 4h", result)
+
+        mid_result = build_next_step_prompt(peer_frame.iloc[2], peer_frame, "training_24x7", 4)
+        self.assertIn("HB_MID", mid_result)
+        self.assertIn("middle of the pack into the first-look set", mid_result)
+
+        low_result = build_next_step_prompt(peer_frame.iloc[4], peer_frame, "training_24x7", 4)
+        self.assertIn("HB_LOW", low_result)
+        self.assertIn("volatility-led edge case", low_result)
 
 
 if __name__ == "__main__":
