@@ -152,7 +152,6 @@ Modo_Assignment/
 ├── README.md
 ├── docs/
 │   └── ARCHITECTURE.md
-├── AI-Assistant.txt
 ├── requirements.txt
 ├── runtime.txt
 ├── scripts/
