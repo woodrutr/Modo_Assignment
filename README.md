@@ -1,7 +1,6 @@
 # ERCOT Flexibility Opportunity Screener
 
-<!-- Replace the URL below with your deployed Streamlit app before submission. -->
-**Hosted dashboard:** ([https://YOUR-DEPLOYED-STREAMLIT-URL](https://settings-mug9d7tln2vtar3wyvdrdw.streamlit.app/)
+> **Live app:** [Open the hosted Streamlit dashboard](https://settings-mug9d7tln2vtar3wyvdrdw.streamlit.app)
 
 This tool is designed to help developers, investors, and large-load planners identify which ERCOT regions appear most sensitive to flexibility, and therefore where deeper forward-looking modeling is most likely to add value.
 
