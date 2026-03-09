@@ -927,6 +927,15 @@ def _render_screen_tab(profile_key: str, duration_hours: int) -> None:
     _render_ranking_table(profile_key)
 
 
+def _format_currency_compact(value: float) -> str:
+    return f"${abs(value):,.0f}" if value >= 0 else f"-${abs(value):,.0f}"
+
+
+def _format_signed_currency_compact(value: float) -> str:
+    sign = "+" if value > 0 else "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.0f}"
+
+
 def _economics_waterfall_figure(selected: pd.Series, profile_key: str) -> go.Figure:
     baseline = selected[_lens_column(profile_key, 4, "baseline_annual_cost_usd_per_mw_year")]
     savings_4h = selected[_lens_column(profile_key, 4, "annual_cost_reduction_usd_per_mw_year")]
@@ -938,7 +947,7 @@ def _economics_waterfall_figure(selected: pd.Series, profile_key: str) -> go.Fig
                 x=[
                     "Baseline annual cost",
                     "4h savings",
-                    "8h incremental savings",
+                    "8h incremental value vs 4h",
                     "8h effective annual cost",
                 ],
                 measure=["absolute", "relative", "relative", "total"],
@@ -947,7 +956,12 @@ def _economics_waterfall_figure(selected: pd.Series, profile_key: str) -> go.Fig
                 decreasing={"marker": {"color": PALETTE["sea_soft"]}},
                 increasing={"marker": {"color": "#cf9b8b"}},
                 totals={"marker": {"color": PALETTE["accent"]}},
-                text=[f"${baseline:,.0f}", f"${savings_4h:,.0f}", f"${incremental_8h:,.0f}", ""],
+                text=[
+                    _format_currency_compact(baseline),
+                    _format_currency_compact(savings_4h),
+                    _format_signed_currency_compact(incremental_8h),
+                    "",
+                ],
                 textposition="outside",
                 cliponaxis=False,
                 hovertemplate="%{x}<br>$%{y:,.2f}/MW-yr<extra></extra>",
@@ -985,15 +999,29 @@ def _render_economic_takeaway(selected: pd.Series, profile_key: str) -> None:
     savings_4h = selected[_lens_column(profile_key, 4, "annual_cost_reduction_usd_per_mw_year")]
     savings_8h = selected[_lens_column(profile_key, 8, "annual_cost_reduction_usd_per_mw_year")]
     incremental_8h = savings_8h - savings_4h
+    effective_4h_price = selected[_lens_column(profile_key, 4, "effective_avg_price_usd_per_mwh")]
     effective_8h_price = selected[_lens_column(profile_key, 8, "effective_avg_price_usd_per_mwh")]
+    if incremental_8h >= 0:
+        duration_text = (
+            f"The <strong>4h</strong> case implies <strong>{_format_currency_compact(savings_4h)}/MW-yr</strong> of "
+            f"gross screening value, while <strong>8h</strong> rises to <strong>{_format_currency_compact(savings_8h)}/MW-yr</strong>, "
+            f"adding <strong>{_format_currency_compact(incremental_8h)}/MW-yr</strong> relative to 4h and lowering implied "
+            f"effective delivered price to <strong>${effective_8h_price:.2f}/MWh</strong>."
+        )
+    else:
+        duration_text = (
+            f"The <strong>4h</strong> case implies <strong>{_format_currency_compact(savings_4h)}/MW-yr</strong> of "
+            f"gross screening value, while <strong>8h</strong> falls to <strong>{_format_currency_compact(savings_8h)}/MW-yr</strong>, "
+            f"reducing value by <strong>{_format_currency_compact(abs(incremental_8h))}/MW-yr</strong> relative to 4h and "
+            f"raising implied effective delivered price from <strong>${effective_4h_price:.2f}/MWh</strong> to "
+            f"<strong>${effective_8h_price:.2f}/MWh</strong>."
+        )
     _render_panel_card(
         "Upper-bound historical flexibility signal",
         (
             f"For <strong>1 MW</strong> of <strong>{profile_label}</strong> load at <strong>{location}</strong>, "
-            f"the historical same-day heuristic implies an upper-bound gross flexibility value of "
-            f"<strong>${savings_4h:,.0f}/MW-yr</strong> for <strong>4h</strong>. Moving to <strong>8h</strong> adds "
-            f"<strong>${incremental_8h:,.0f}/MW-yr</strong> of incremental gross value, bringing the implied effective "
-            f"delivered price to <strong>${effective_8h_price:.2f}/MWh</strong>. This is a screening signal, not net project economics."
+            f"the historical same-day heuristic implies an upper-bound gross flexibility signal. {duration_text} "
+            "This is a screening signal, not net project economics."
         ),
     )
 
@@ -1102,14 +1130,23 @@ def _render_incremental_value_footer(selected: pd.Series, profile_key: str) -> N
         selected[_lens_column(profile_key, 4, "effective_avg_price_usd_per_mwh")]
         - selected[_lens_column(profile_key, 8, "effective_avg_price_usd_per_mwh")]
     )
-    _render_panel_card(
-        "8h incremental value vs 4h",
-        (
+    if incremental_savings >= 0:
+        body = (
             f"Relative to <strong>4h</strong>, the <strong>8h</strong> case adds "
-            f"<strong>${incremental_savings:,.0f}/MW-yr</strong> of incremental gross screening value, improves cost reduction by "
+            f"<strong>{_format_currency_compact(incremental_savings)}/MW-yr</strong> of incremental gross screening value, improves cost reduction by "
             f"<strong>{incremental_pct:.1f} percentage points</strong>, and lowers implied effective delivered price by "
             f"<strong>${incremental_price:.2f}/MWh</strong>."
-        ),
+        )
+    else:
+        body = (
+            f"Relative to <strong>4h</strong>, the <strong>8h</strong> case reduces gross screening value by "
+            f"<strong>{_format_currency_compact(abs(incremental_savings))}/MW-yr</strong>, reduces cost reduction by "
+            f"<strong>{abs(incremental_pct):.1f} percentage points</strong>, and raises implied effective delivered price by "
+            f"<strong>${abs(incremental_price):.2f}/MWh</strong>."
+        )
+    _render_panel_card(
+        "8h incremental value vs 4h",
+        body,
     )
 
 

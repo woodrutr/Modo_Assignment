@@ -215,6 +215,25 @@
 
 - the hosted deployment should still be manually refreshed once to confirm the evidence tab now renders without the pandas length-mismatch error
 - the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
+
+## Session Addendum — 2026-03-09 Incremental Value Wording Fix
+
+### Timestamped Notes
+
+- 2026-03-09T09:45:19-04:00 [analysis] Confirmed that the apparent negative `gross screening values` were not a core-metrics regression. Gross `4h` and gross `8h` annual cost-reduction values remain positive across the screened sample; the negative numbers on the evidence tab were specifically the incremental `8h minus 4h` comparison under the `Weekday 9-5 Inference` heuristic.
+- 2026-03-09T09:45:19-04:00 [decision] Kept the underlying analytics unchanged and fixed the presentation semantics instead. The evidence copy now distinguishes clearly between gross `4h`/`8h` values and the incremental `8h vs 4h` delta, with sign-aware wording for cases where `8h` is worse than `4h`.
+- 2026-03-09T09:45:19-04:00 [ux] Renamed the waterfall step from `8h incremental savings` to `8h incremental value vs 4h` and corrected currency formatting so negative deltas render as `-$X` instead of `$-X`.
+
+### Verified State
+
+- 2026-03-09T09:45:19-04:00 artifact sanity check for `HB_PAN` under `inference_weekday_9_17` — `4h_value=$6,066.71/MW-yr`, `8h_value=$3,919.45/MW-yr`, `incremental_8h=-$2,147.27/MW-yr`, `4h_price=$15.41/MWh`, `8h_price=$16.44/MWh`
+- 2026-03-09T09:45:19-04:00 `.venv/bin/python -m py_compile app.py` — passed
+- 2026-03-09T09:45:19-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8556` — booted cleanly after the sign-aware evidence copy update
+
+### Open / Pending
+
+- manual browser review is still required to confirm the evidence text now reads clearly for both positive and negative `8h vs 4h` incremental cases
+- the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
 - the tracked `AI-Assistant.txt` remains longer and more iterative than an ideal reviewer-facing AI note, even though the most problematic recovery narrative has already been removed
 
 ## Session Addendum — 2026-03-08 Repo Reorganization Pass
