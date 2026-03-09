@@ -187,8 +187,8 @@ Modo_Assignment/
 
 ## AI Workflow
 
-This take-home explicitly allowed and encouraged AI use. The reviewer-facing summary is in [AI-Assistant.txt](AI-Assistant.txt).
+This take-home explicitly allowed and encouraged AI use. 
 
 - AI was used to accelerate architecture framing, implementation sequencing, UI refinement, and verification tracking
-- final behavior was kept anchored to the single truth path and validated with local commands
+- Final behavior was kept anchored to the single truth path and validated with local commands
 - AI-assisted diagnostics and cleanup were kept separate from the reviewer-facing product claim
