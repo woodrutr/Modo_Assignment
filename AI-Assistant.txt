@@ -178,6 +178,43 @@
 
 - manual browser review of the new region-specific `What to do next` copy across top-, mid-, and lower-ranked regions is still pending
 - the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
+
+## Session Addendum — 2026-03-09 Methods Tooltip Fix
+
+### Timestamped Notes
+
+- 2026-03-09T08:19:22-04:00 [bugfix] Removed the `help=\"Methods\"` tooltip from the shared `st.popover` helper in `app.py`. The floating `Methods` label was a separate tooltip layer on the popover trigger, not the actual methods content, and it could linger visually while scrolling.
+- 2026-03-09T08:19:22-04:00 [scope] Kept the fix presentation-only and localized to the shared `_render_info_popover` helper so every methods control benefits without changing any analytics, state flow, or copy.
+
+### Verified State
+
+- 2026-03-09T08:19:22-04:00 `.venv/bin/python -m py_compile app.py` — passed
+- 2026-03-09T08:19:22-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8554` — booted cleanly after the tooltip fix
+
+### Open / Pending
+
+- manual browser confirmation is still required to verify that the tooltip layer no longer lingers while scrolling after clicking a methods control
+- the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
+
+## Session Addendum — 2026-03-09 Deployment Groupby Compatibility Fix
+
+### Timestamped Notes
+
+- 2026-03-09T08:24:42-04:00 [bugfix] Fixed a deployment-only crash in the evidence tab where pandas 3.12-hosted groupby behavior expanded `groupby(["local_month", "local_month_label"], as_index=False)` against the categorical month label and raised a length-mismatch error during aggregation.
+- 2026-03-09T08:24:42-04:00 [decision] Replaced the fragile pattern with a stable contract: aggregate by numeric `local_month` only, then derive `local_month_label` afterward from `MONTH_ORDER`. This was applied to both the monthly driver chart and the monthly profitable-frame helper.
+- 2026-03-09T08:24:42-04:00 [scope] Kept the fix strictly in the app presentation layer. No data artifacts, score construction, or core analytics logic changed.
+
+### Verified State
+
+- 2026-03-09T08:24:42-04:00 local reproduction script against `hourly_profile_shape` — passed; the patched monthly driver aggregation returned `12` monthly rows for both active and overnight series without shape mismatch
+- 2026-03-09T08:24:42-04:00 `.venv/bin/python -m py_compile app.py` — passed
+- 2026-03-09T08:24:42-04:00 `.venv/bin/python -m unittest discover -s tests` — passed (`20` tests)
+- 2026-03-09T08:24:42-04:00 `.venv/bin/streamlit run app.py --server.headless true --server.address 127.0.0.1 --server.port 8555` — booted cleanly after the groupby compatibility fix
+
+### Open / Pending
+
+- the hosted deployment should still be manually refreshed once to confirm the evidence tab now renders without the pandas length-mismatch error
+- the README hosted-dashboard URL is still a placeholder and must be replaced with the actual deployed Streamlit URL before submission
 - the tracked `AI-Assistant.txt` remains longer and more iterative than an ideal reviewer-facing AI note, even though the most problematic recovery narrative has already been removed
 
 ## Session Addendum — 2026-03-08 Repo Reorganization Pass

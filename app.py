@@ -593,7 +593,7 @@ def _methods_diagnostics_markdown(profile_key: str, duration_hours: int) -> str:
 
 
 def _render_info_popover(markdown_text: str, key: str) -> None:
-    with st.popover("?", help="Methods", type="tertiary", key=key):
+    with st.popover("?", type="tertiary", key=key):
         st.markdown(markdown_text)
 
 
@@ -967,12 +967,14 @@ def _monthly_profitable_frame(selected_location: str, profile_key: str, duration
         & daily_windows["active_load_mwh"].gt(0),
         :,
     ].copy()
+    month_map = {index: label for index, label in enumerate(MONTH_ORDER, start=1)}
     return (
-        frame.groupby(["local_month", "local_month_label"], as_index=False)
+        frame.groupby("local_month", as_index=False, observed=True)
         .agg(
             profitable_day_share=(f"{prefix}_profitable", lambda series: float(series.mean() * 100.0)),
             average_best_spread=(f"{prefix}_best_spread_usd_per_mwh", "mean"),
         )
+        .assign(local_month_label=lambda value: value["local_month"].map(month_map))
         .sort_values("local_month", kind="mergesort")
     )
 
@@ -1031,16 +1033,19 @@ def _monthly_driver_figure(selected_location: str, profile_key: str, duration_ho
             & hourly_shape["duration_hours"].eq(duration_hours),
             :,
         ].copy()
+        month_map = {index: label for index, label in enumerate(MONTH_ORDER, start=1)}
         active = (
             frame.loc[frame["active_hour_flag"]]
-            .groupby(["local_month", "local_month_label"], as_index=False)
+            .groupby("local_month", as_index=False, observed=True)
             .agg(value=("market_price_avg_usd_per_mwh", "mean"))
+            .assign(local_month_label=lambda value: value["local_month"].map(month_map))
             .assign(series="Weekday active hours")
         )
         overnight = (
             frame.loc[frame["local_hour"].between(0, 8)]
-            .groupby(["local_month", "local_month_label"], as_index=False)
+            .groupby("local_month", as_index=False, observed=True)
             .agg(value=("market_price_avg_usd_per_mwh", "mean"))
+            .assign(local_month_label=lambda value: value["local_month"].map(month_map))
             .assign(series="Overnight charge window")
         )
         compare = pd.concat([active, overnight], ignore_index=True)
